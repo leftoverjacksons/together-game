@@ -1,8 +1,9 @@
-import {createWorld,context,WORLD,TOOLS,pose,surface,tile,initialSurface,clamp} from '/shared/game.mjs';
+import {createWorld,context,WORLD,TOOLS,pose,surface,tile,initialSurface,clamp,targetMenu} from '/shared/game.mjs';
 const $=id=>document.getElementById(id),canvas=$('world'),ctx=canvas.getContext('2d');
 let state=createWorld(),session=null,source=null,playing=false,online=false,sequence=0,pending=false,lastSent=0;
 let w=innerWidth,h=innerHeight,zoom=1,camX=0,camY=230,lastFrame=performance.now(),lastEvent='',toastUntil=0,endingShown=false;
 let mouse={x:0,y:0,active:false},renderPose={...state.vehicle},renderPeople=new Map(),terrainVersion=-1;
+let brush=null,radialTarget=null;
 let keys={left:false,right:false,jump:false,down:false,brake:false,work:false,aimX:0,aimY:0};
 const colors=['#c27750','#749a9b'];
 const local={get(k){try{return sessionStorage.getItem(k);}catch{return null;}},set(k,v){try{sessionStorage.setItem(k,v);}catch{}},remove(k){try{sessionStorage.removeItem(k);}catch{}}};
@@ -36,6 +37,9 @@ function updateHud(){const p=me();if(!p)return;const count=state.players.filter(
   $('tension-box').hidden=!state.cable;if(state.cable){$('tension').value=state.cable.load;$('tension-label').textContent=state.cable.load>90?'Winch at load limit. Improve the approach.':Math.round(state.cable.length)+' units / SPACE in / S out';}
   for(const b of document.querySelectorAll('[data-tool]')){b.classList.toggle('selected',b.dataset.tool===p.tool);b.setAttribute('aria-pressed',String(b.dataset.tool===p.tool));}
   $('tool-description').textContent=p.inside?(p.station==='driver'?'A / D throttle. SHIFT brake. E leave station.':p.station==='winch'?'Hold SPACE to reel in. Hold S to pay out.':'Walk left to the rear door. E to step outside.'):({dig:'Hold mouse on nearby soil to excavate. Dark bedrock stays.',fill:'Hold mouse to place soil against existing ground.',cable:'Click a highlighted tree or rock. Click it again to release.',saw:'Hold mouse on a trunk to fell it. Keep clear of the fall.',timber:'Click a log to carry it. Q / R rotate. E sets it down.'}[p.tool]);
+  $('tool-description').textContent=brush?`${brush==='dig'?'Digging':'Placing soil'}: hold mouse to work. Right-click or Esc to change action.`:'Click the house, trees, rocks, timber or ground for actions.';
+  $('brush-done').hidden=!brush;
+  $('rollover').hidden=Math.cos(state.vehicle.angle)>.3;
   $('note-count').textContent=state.events.length;if(lastEvent!==state.lastEvent){lastEvent=state.lastEvent;toast(lastEvent);}
   if(state.won&&!endingShown){endingShown=true;$('dog-ending').textContent=state.dog?'Moss has claimed the warm spot by the stove.':'';clearKeys();$('ending').showModal();}
 }
@@ -43,21 +47,33 @@ function clearKeys(){keys={left:false,right:false,jump:false,down:false,brake:fa
 async function sendInput(){if(!session||!online||pending)return;pending=true;lastSent=performance.now();try{await api('/api/input',{...auth(),...keys,sequence:++sequence});}catch(e){toast(e.message);}finally{pending=false;}}
 async function action(){if(!online)return;try{await api('/api/interact',auth());}catch(e){toast(e.message);}}
 async function tool(action){if(!online)return;try{await api('/api/tool',{...auth(),action});}catch(e){toast(e.message);}}
+function closeRadial(){radialTarget=null;$('radial').hidden=true;}
+function stopBrush(){brush=null;keys.work=false;sendInput();$('brush-done').hidden=true;}
+function openRadial(e){stopBrush();clearKeys();aim(e);const x=keys.aimX,y=keys.aimY,m=targetMenu(state,me(),x,y);radialTarget={x,y};const root=$('radial');root.style.left=clamp(e.clientX,145,w-145)+'px';root.style.top=clamp(e.clientY,145,h-145)+'px';$('radial-title').textContent=m.title;$('radial-options').replaceChildren();$('radial-hint').textContent=m.actions.length?'Choose an action':'This rock is too hard to dig';
+  m.actions.forEach((a,i)=>{const b=document.createElement('button');b.type='button';b.textContent=a.label;b.className='radial-action';const angle=-Math.PI/2+i*2*Math.PI/m.actions.length;b.style.left=(Math.cos(angle)*91)+'px';b.style.top=(Math.sin(angle)*91)+'px';b.disabled=!!a.disabled;b.title=a.disabled?a.reason:a.label;b.onclick=()=>chooseRadial(a,x,y);$('radial-options').append(b);});
+  const disabled=m.actions.find(a=>a.disabled);if(disabled)$('radial-hint').textContent=disabled.reason;root.hidden=false;
+}
+async function chooseRadial(option,x,y){closeRadial();if(option.id==='right'){await tool({recover:true,near:true});clearKeys();return;}
+  await tool({menu:option.id,x,y});if(option.tool==='dig'||option.tool==='fill'){brush=option.tool;toast(brush==='dig'?'Hold the mouse to dig. Esc returns to clicking.':'Hold the mouse to build. Esc returns to clicking.');}
+  if(option.tool==='saw')toast('Cutting the tree. Move or press Esc to stop.');
+}
+$('radial-close').onclick=closeRadial;$('brush-done').onclick=stopBrush;$('right-house').onclick=()=>{clearKeys();closeRadial();tool({recover:true,near:true});};
 const keyMap={KeyA:'left',ArrowLeft:'left',KeyD:'right',ArrowRight:'right',Space:'jump',KeyS:'down',ArrowDown:'down',ShiftLeft:'brake',ShiftRight:'brake'};
 addEventListener('keydown',e=>{if(!playing||document.querySelector('dialog[open]')||/INPUT/.test(e.target.tagName))return;
+  if(e.code==='Escape'){closeRadial();stopBrush();tool({cancel:true});return;}
   if(keyMap[e.code]){e.preventDefault();keys[keyMap[e.code]]=true;sendInput();}
   if(e.repeat)return;if(e.code==='KeyE')action();if(e.code==='KeyH'){clearKeys();$('guide').showModal();}
-  if(/^Digit[1-5]$/.test(e.code))tool({select:TOOLS[Number(e.code.slice(-1))-1]});
+  if(/^Digit[1-5]$/.test(e.code)){const selected=TOOLS[Number(e.code.slice(-1))-1];tool({select:selected});brush=['dig','fill'].includes(selected)?selected:null;closeRadial();}
   if(e.code==='KeyQ')tool({rotate:-1});if(e.code==='KeyR')tool({rotate:1});
 });
 addEventListener('keyup',e=>{if(keyMap[e.code]){keys[keyMap[e.code]]=false;sendInput();}});addEventListener('blur',clearKeys);document.addEventListener('visibilitychange',()=>{if(document.hidden)clearKeys();});
 function aim(e){mouse={x:e.clientX,y:e.clientY,active:true};keys.aimX=camX+mouse.x/scale();keys.aimY=camY+mouse.y/scale();}
-canvas.onpointermove=aim;canvas.onpointerdown=e=>{if(!playing||document.querySelector('dialog[open]'))return;e.preventDefault();canvas.setPointerCapture(e.pointerId);aim(e);const p=me();if(p?.tool==='cable'||p?.tool==='timber')tool({x:keys.aimX,y:keys.aimY});else keys.work=true;sendInput();};canvas.onpointerup=canvas.onpointercancel=()=>{keys.work=false;sendInput();};canvas.oncontextmenu=e=>e.preventDefault();
+canvas.onpointermove=aim;canvas.onpointerdown=e=>{if(!playing||document.querySelector('dialog[open]'))return;e.preventDefault();aim(e);const m=targetMenu(state,me(),keys.aimX,keys.aimY),ground=['Soil','Bedrock','Build a ramp'].includes(m.title);if(brush&&ground&&e.button!==2){closeRadial();canvas.setPointerCapture(e.pointerId);keys.work=true;sendInput();}else openRadial(e);};canvas.onpointerup=canvas.onpointercancel=()=>{keys.work=false;sendInput();};canvas.oncontextmenu=e=>e.preventDefault();
 canvas.addEventListener('wheel',e=>{if(!playing)return;e.preventDefault();zoom=clamp(zoom-e.deltaY*.0007,.65,1.35);},{passive:false});
 for(const b of document.querySelectorAll('[data-tool]'))b.onclick=()=>tool({select:b.dataset.tool});
 for(const b of document.querySelectorAll('[data-key]')){b.onpointerdown=e=>{e.preventDefault();b.setPointerCapture(e.pointerId);keys[b.dataset.key]=true;sendInput();};b.onpointerup=b.onpointercancel=()=>{keys[b.dataset.key]=false;sendInput();};}
 $('touch-e').onclick=action;for(const b of document.querySelectorAll('[data-close]'))b.onclick=()=>$(b.dataset.close).close();
-$('help').onclick=()=>{clearKeys();$('guide').showModal();};$('recover').onclick=()=>{clearKeys();$('recovery').showModal();};$('confirm-recover').onclick=()=>{tool({recover:true});$('recovery').close();};
+$('help').onclick=()=>{clearKeys();closeRadial();$('guide').showModal();};$('recover').onclick=()=>{clearKeys();$('recovery').showModal();};$('confirm-recover').onclick=()=>{tool({recover:true});$('recovery').close();};
 $('journal-button').onclick=()=>{clearKeys();$('notes').replaceChildren();for(const event of state.events){const node=document.createElement('div');node.className='note';node.textContent=event.text;$('notes').append(node);}if(!state.events.length)$('notes').textContent='The road is still unwritten.';$('journal').showModal();};
 $('invite').onclick=()=>{clearKeys();$('invite-url').value=location.origin+'/?room='+session.code;$('trip-code').textContent=session.code;$('local-note').textContent=/localhost|127\.0\.0\.1/.test(location.hostname)?'Local preview: use the deployed HTTPS address to invite someone in another location.':'Send this link to your fellow traveler.';$('invitation').showModal();};
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('invite-url').value);$('copy').textContent='Copied';}catch{$('invite-url').select();}};

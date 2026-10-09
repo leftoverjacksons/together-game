@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createWorld,addPlayer,step,toolAction,interact,snapshot,surface,solid,WORLD} from '../shared/game.mjs';
+import {createWorld,addPlayer,step,toolAction,interact,snapshot,surface,solid,WORLD,targetMenu} from '../shared/game.mjs';
 const advance=(s,n)=>{for(let i=0;i<n;i++)step(s);};
 function driver(s){const p=addPlayer(s,'driver','Driver');p.station='driver';p.localX=90;return p;}
 function outside(s,x,y){const p=addPlayer(s,'builder','Builder');Object.assign(p,{inside:false,x,y});return p;}
@@ -54,4 +54,21 @@ test('recovery preserves earthworks and boards both travelers; snapshot omits te
   assert(toolAction(s,p,{recover:true}));assert(s.players.every(p=>p.inside));assert.equal(s.terrainVersion,version);assert(!solid(s,550,750));
   assert.equal(snapshot(s).terrain.length,WORLD.cols*WORLD.rows);assert(!('terrain' in snapshot(s,false)));assert(!('input' in snapshot(s).players[0]));
   q.localX=90;interact(s,q);p.localX=90;interact(s,p);assert.equal(q.station,'driver');assert.equal(p.station,null);
+});
+test('click menus offer object-specific actions and enforce reach and station occupancy',()=>{
+  const s=createWorld(),p=driver(s),q=addPlayer(s,'partner','Partner');
+  let m=targetMenu(s,q,s.vehicle.x,s.vehicle.y);assert(m.actions.find(a=>a.id==='driver').disabled);
+  assert(!toolAction(s,q,{menu:'driver',x:s.vehicle.x,y:s.vehicle.y}));assert.equal(q.station,null);
+  assert(toolAction(s,q,{menu:'winch',x:s.vehicle.x,y:s.vehicle.y}));assert.equal(q.station,'winch');
+  assert(toolAction(s,q,{menu:'exit',x:s.vehicle.x,y:s.vehicle.y}));assert(!q.inside);
+  const tree=s.trees[0];m=targetMenu(s,q,tree.x,tree.y-30);assert.equal(m.title,'Pine tree');assert(m.actions.every(a=>a.disabled));
+  q.x=tree.x-30;q.y=tree.y;q.cooldown=0;m=targetMenu(s,q,tree.x,tree.y-30);assert(m.actions.every(a=>!a.disabled));
+  assert(toolAction(s,q,{menu:'saw',x:tree.x,y:tree.y-30}));advance(s,65);assert.equal(tree.cut,100);assert(!q.task);
+  assert.equal(targetMenu(s,p,NaN,0).actions.length,0);
+});
+test('rollover rescue works from afar, rights the chassis, stops input and preserves terrain',()=>{
+  const s=createWorld(),p=driver(s),q=outside(s,3200,400);s.terrain[37*224+27]=0;s.terrainVersion++;const dirt=s.terrain.join('');
+  const v=s.vehicle;for(const n of v.points){n.x=v.x-(n.x-v.x);n.y=v.y-(n.y-v.y);n.ox=n.x;n.oy=n.y;}v.angle=Math.PI;p.input={right:true,jump:true};s.cable={id:'x',x:700,y:400,length:40,load:100};
+  assert(toolAction(s,q,{recover:true,near:true}));assert.equal(s.vehicle.angle,0);assert.equal(s.cable,null);assert(s.players.every(p=>p.inside&&!p.station&&!p.input.right));assert.equal(s.terrain.join(''),dirt);
+  advance(s,120);assert(Math.abs(s.vehicle.angle)<.1);assert.equal(s.vehicle.grounded,2);
 });

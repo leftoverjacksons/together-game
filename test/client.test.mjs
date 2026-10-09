@@ -20,4 +20,8 @@ test('client starts, joins a room, merges terrain updates, and renders both play
   game.step(s);eventSource.onmessage({data:JSON.stringify(game.snapshot(s,false))});vm.runInContext('frame(1066)',context);
   assert.equal(vm.runInContext('state.terrain.length',context),game.WORLD.cols*game.WORLD.rows);assert.equal(vm.runInContext('state.players.length',context),2);
   assert.match(elements.get('connection').textContent,/2\/2/);
+  vm.runInContext('openRadial({clientX:(state.vehicle.x-camX)*scale(),clientY:(state.vehicle.y-camY)*scale()})',context);
+  assert.equal(elements.get('radial').hidden,false);assert.equal(elements.get('radial-title').textContent,'Our home');
+  vm.runInContext('closeRadial()',context);assert.equal(elements.get('radial').hidden,true);
+  s.vehicle.angle=Math.PI;eventSource.onmessage({data:JSON.stringify(game.snapshot(s,false))});assert.equal(elements.get('rollover').hidden,false);
 });

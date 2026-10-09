@@ -33,7 +33,13 @@ Open the deployed HTTPS address, create a trip and share its invitation link. Gi
 - Moss is waiting along the route. Reach Stillwater with everyone aboard.
 - Recovery returns the cabin and both travelers to the latest level turnout while preserving earthworks. It releases the cable and drops carried timber.
 
-## Controls
+## Click-first controls
+
+Click the house, a tree, a rock, timber, or ground to open a radial action menu. Actions are specific to the object; disabled actions explain reach or occupancy limits. Selecting Dig or Place soil activates a brush: hold the mouse to work; right-click or Esc returns to menus. Selecting Fell tree keeps sawing automatically until the tree falls; movement or Esc cancels it. The large tool button row is hidden; keyboard shortcuts remain available.
+
+A tipped house displays a prominent **Right the house** button. The same action is on the house menu. It places the vehicle upright on nearby clear, level ground, releases the cable, boards both travelers, and clears throttle input. If no suitable nearby ground exists it searches near the checkpoint. Recovery is available even when a traveler is far from the cabin. Earthworks are preserved.
+
+## Keyboard shortcuts
 
 | Control | Action |
 | --- | --- |

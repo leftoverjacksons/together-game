@@ -43,9 +43,26 @@ function reachable(s,p,x,y,limit=145){if(!Number.isFinite(x)||!Number.isFinite(y
 }
 export function toolAction(s,p,action={}){
   if(!p.connected)return false;
-  if(action.select&&TOOLS.includes(action.select)){p.tool=action.select;return true;}
-  if(action.rotate&&p.held){p.heldAngle+=clamp(action.rotate,-1,1)*Math.PI/12;return true;}
-  if(action.recover){if(hypot(p.x-s.vehicle.x,p.y-s.vehicle.y)>260)return false;recover(s);return true;}
+  if(action.menu){
+    const menu=targetMenu(s,p,Number(action.x),Number(action.y));
+    const option=menu.actions.find(a=>a.id===action.menu&&!a.disabled);if(!option)return false;p.task=null;
+    if(option.id==='right'){recover(s,true);return true;}
+    if(option.id==='board'){p.inside=true;p.station=null;p.localX=-88;p.input={};return true;}
+    if(option.id==='exit'){p.station=null;p.localX=-107;interact(s,p);return true;}
+    if(option.id==='driver'||option.id==='winch'){p.station=option.id;p.localX=option.id==='driver'?90:-51;p.input={};return true;}
+    if(option.id==='release'){p.station=null;p.input={};return true;}
+    if(option.id==='drop'){drop(s,p);return true;}
+    if(option.id==='rotate-left'||option.id==='rotate-right'){p.heldAngle+=(option.id==='rotate-left'?-1:1)*Math.PI/12;return true;}
+    if(option.id==='dog'){s.dog=true;announce(s,'Moss has found his people. There is room by the stove.');return true;}
+    p.tool=option.tool;p.cooldown=0;
+    const result=toolAction(s,p,{x:option.x,y:option.y});
+    if(result&&option.tool==='saw')p.task={x:option.x,y:option.y};
+    return result;
+  }
+  if(action.select&&TOOLS.includes(action.select)){p.tool=action.select;p.task=null;return true;}
+  if(Number.isFinite(action.rotate)&&action.rotate&&p.held){p.heldAngle+=clamp(action.rotate,-1,1)*Math.PI/12;return true;}
+  if(action.cancel){p.task=null;return true;}
+  if(action.recover){recover(s,action.near===true);return true;}
   if(p.inside||p.cooldown>0)return false;
   const x=Number(action.x),y=Number(action.y);if(!reachable(s,p,x,y))return false;
   p.aimX=x;p.aimY=y;p.cooldown=.16;
@@ -79,7 +96,42 @@ export function toolAction(s,p,action={}){
     const log=s.logs.find(l=>!l.heldBy&&distanceSegment(x,y,l.a,l.b).d<35);if(log){log.heldBy=p.id;p.held=log.id;p.heldAngle=Math.atan2(log.b.y-log.a.y,log.b.x-log.a.x);return true;}
   }return false;
 }
-function recover(s){const x=s.checkpoint;s.vehicle=makeVehicle(x,surface(s,x)-118);s.cable=null;for(const p of s.players){drop(s,p);p.inside=true;p.station=null;p.localX=0;p.x=x;p.y=s.vehicle.y+40;p.vx=p.vy=0;}announce(s,'Recovered to the last level turnout. Your terrain work is still here.');}
+function safeRecovery(s,preferred){
+  for(const center of [preferred,s.checkpoint,370])for(let radius=0;radius<=520;radius+=40)for(const sign of radius?[1,-1]:[1]){
+    const x=clamp(center+radius*sign,160,WORLD.width-160),heights=[];for(let d=-135;d<=135;d+=15)heights.push(surface(s,x+d));
+    if(Math.max(...heights)-Math.min(...heights)>20)continue;
+    if(s.trees.some(t=>t.cut<100&&Math.abs(t.x-x)<150))continue;
+    const y=Math.min(...heights)-125;
+    if(s.logs.some(l=>!l.heldBy&&Math.max(l.a.x,l.b.x)>x-145&&Math.min(l.a.x,l.b.x)<x+145&&Math.min(l.a.y,l.b.y)<y+130&&Math.max(l.a.y,l.b.y)>y-90))continue;
+    return makeVehicle(x,y);
+  }
+  // Last-resort rescue above the highest terrain across the whole footprint.
+  const x=370;let y=1280;for(let d=-140;d<=140;d+=20)y=Math.min(y,surface(s,x+d));return makeVehicle(x,y-180);
+}
+function recover(s,near=false){s.vehicle=safeRecovery(s,near?s.vehicle.x:s.checkpoint);s.cable=null;for(const p of s.players){drop(s,p);p.inside=true;p.station=null;p.localX=0;p.x=s.vehicle.x;p.y=s.vehicle.y+40;p.vx=p.vy=0;p.input={};p.task=null;}announce(s,near?'House upright on nearby safe ground. Everyone aboard; terrain work preserved.':'Recovered to safe ground. Everyone aboard; terrain work preserved.');}
+export function targetMenu(s,p,x,y){
+  const menu={title:'Ground',actions:[]};if(!p||!Number.isFinite(x)||!Number.isFinite(y))return menu;
+  const add=(id,label,extra={})=>menu.actions.push({id,label,...extra});
+  const dx=x-s.vehicle.x,dy=y-s.vehicle.y,co=Math.cos(s.vehicle.angle),si=Math.sin(s.vehicle.angle),lx=dx*co+dy*si,ly=dy*co-dx*si;
+  if(Math.abs(lx)<145&&ly>-120&&ly<125){
+    menu.title='Our home';
+    if(p.inside){for(const id of ['driver','winch'])if(p.station!==id)add(id,id==='driver'?'Drive':'Use winch',{disabled:s.players.some(q=>q!==p&&q.connected&&q.station===id),reason:'Your partner is using it'});if(p.station)add('release','Leave station');add('exit','Step outside');}
+    else add('board','Climb aboard',{disabled:hypot(p.x-s.vehicle.x,p.y-s.vehicle.y)>225,reason:'Walk closer to the house'});
+    add('right','Right the house');return menu;
+  }
+  if(p.held){menu.title='Carried timber';add('drop','Set down');add('rotate-left','Rotate left');add('rotate-right','Rotate right');return menu;}
+  const tree=s.trees.find(t=>t.cut<100&&Math.abs(t.x-x)<45&&y>t.y-t.height-15&&y<t.y+20);
+  const rock=s.anchors.find(a=>hypot(a.x-x,a.y-y)<35);
+  const log=s.logs.find(l=>distanceSegment(x,y,l.a,l.b).d<24);
+  const permission=(tx,ty)=>({disabled:p.inside||!reachable(s,p,tx,ty),reason:p.inside?'Step outside first':'Walk closer to reach this'});
+  if(tree||rock){const a=tree?{id:tree.id,x:tree.x,y:tree.y-75}:rock;menu.title=tree?'Pine tree':'Rock anchor';add('cable',s.cable?.id===a.id?'Release cable':'Attach cable',{tool:'cable',x:a.x,y:a.y,...permission(a.x,a.y)});if(tree)add('saw','Fell tree',{tool:'saw',x:tree.x,y:tree.y-30,...permission(tree.x,tree.y-30)});return menu;}
+  if(log){menu.title='Timber';add('timber',log.heldBy?'Being carried':'Pick up',{tool:'timber',x,y,...permission(x,y),...(log.heldBy?{disabled:true,reason:'Your partner is carrying this'}:{})});return menu;}
+  if(!s.dog&&hypot(x-2510,y-(surface(s,2510)-15))<35){menu.title='Moss';add('dog','Say hello',permission(2510,surface(s,2510)-15));return menu;}
+  const material=tile(s,Math.floor(x/20),Math.floor(y/20));menu.title=material===2?'Bedrock':material===1?'Soil':'Build a ramp';
+  if(material===1)add('dig','Dig',{tool:'dig',x,y,...permission(x,y)});
+  if(material===0)add('fill','Place soil',{tool:'fill',x,y,...permission(x,y),...(s.soil<1?{disabled:true,reason:'Dig some soil first'}:{})});
+  return menu;
+}
 function integrate(p,dt,ax=0,ay=G){const dx=clamp((p.x-p.ox)*.999,-5,5),dy=clamp((p.y-p.oy)*.999,-7,7);p.ox=p.x;p.oy=p.y;p.x+=dx+ax*dt*dt;p.y+=dy+ay*dt*dt;p.ground=false;}
 function distance(a,b,rest,stiff=1){const dx=b.x-a.x,dy=b.y-a.y,d=hypot(dx,dy)||1,err=(d-rest)/d*stiff,w=a.inv+b.inv;const cx=dx*err,cy=dy*err;a.x+=cx*a.inv/w;a.y+=cy*a.inv/w;b.x-=cx*b.inv/w;b.y-=cy*b.inv/w;}
 function push(p,nx,ny,depth,friction=0){p.x+=nx*depth;p.y+=ny*depth;let vx=p.x-p.ox,vy=p.y-p.oy;const inward=vx*nx+vy*ny;if(inward<0){vx-=nx*inward;vy-=ny*inward;}const tang=vx*(-ny)+vy*nx;vx-=(-ny)*tang*friction;vy-=nx*tang*friction;p.ox=p.x-vx;p.oy=p.y-vy;if(ny<-.25){if(!p.ground||Math.abs(nx)>Math.abs(p.nx)){p.nx=nx;p.ny=ny;}p.ground=true;}}
@@ -125,7 +177,7 @@ function playerMove(s,p,dt){const move=(p.input.right?1:0)-(p.input.left?1:0);
 }
 export function step(s,dt=.05){s.tick++;s.time+=dt;const v=s.vehicle,oldX=v.x,driver=s.players.find(p=>p.connected&&p.station==='driver'),wincher=s.players.find(p=>p.connected&&p.station==='winch'),throttle=driver?((driver.input.right?1:0)-(driver.input.left?1:0)):0,solo=s.players.filter(p=>p.connected).length===1,reel=!!wincher?.input.jump||(solo&&!!driver?.input.jump),payout=!!wincher?.input.down||(solo&&!!driver?.input.down);
   v.brake=!driver||!!driver.input.brake;const count=Math.max(1,Math.round(dt/H)),h=dt/count;for(let i=0;i<count;i++){physics(s,h,throttle,v.brake,reel,payout);for(const p of s.players)if(p.connected)playerMove(s,p,h);}
-  v.speed=(v.x-oldX)/dt;for(const p of s.players){p.cooldown=Math.max(0,p.cooldown-dt);if(p.input.work)toolAction(s,p,{x:p.input.aimX,y:p.input.aimY});if(!p.connected&&p.held)drop(s,p);}
+  v.speed=(v.x-oldX)/dt;for(const p of s.players){p.cooldown=Math.max(0,p.cooldown-dt);if(p.input.work)toolAction(s,p,{x:p.input.aimX,y:p.input.aimY});if(p.task){if(p.inside||p.input.left||p.input.right||!p.connected||!reachable(s,p,p.task.x,p.task.y)||!s.trees.some(t=>t.cut<100&&Math.abs(t.x-p.task.x)<40))p.task=null;else if(p.cooldown===0){p.tool='saw';toolAction(s,p,p.task);}}if(!p.connected&&p.held)drop(s,p);}
   if(v.grounded===2&&Math.abs(v.angle)<.10&&Math.abs(v.speed)<12&&v.x>s.checkpoint+200)s.checkpoint=v.x;
   if(v.x>WORLD.camp&&!s.won&&s.players.filter(p=>p.connected).every(p=>p.inside)){s.won=true;announce(s,'Stillwater. You made this route your own. Park up and put the kettle on.');}
 }
