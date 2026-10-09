@@ -22,6 +22,12 @@ Open the deployed HTTPS address, create a trip and share its invitation link. Gi
 
 **Active trips live in memory. A restart or redeploy starts fresh.** Empty trips pause and expire after two hours. A sleeping hosting instance also loses its trips. No database, account system, paid API or runtime npm package is required.
 
+## Smoother terrain and illustrated art (0.3)
+
+Untouched terrain now follows continuous elevation rather than square collision tiles. Excavation is reconstructed into connected contours, including tunnel walls. The renderer and tire collision solver share the same triangulated contour mesh. Edit cells remain 20 units for network compatibility, but their visible and collision boundaries are no longer square blocks. Motor force and top speed were retuned for the lower rolling resistance.
+
+The visual direction is soft illustrated 2D: textured earth and mineral strata, grass edges, layered tree silhouettes, rounded animated travelers with walking limbs and backpacks, a softer cabin interior and a rounded dog. This is vector Canvas artwork, not pixel-art sprites.
+
 ## The new field test
 
 - A handcrafted 4,480-unit route with a steep ridge, a gully and a high pass.

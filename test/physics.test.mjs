@@ -15,7 +15,7 @@ test('traction cannot climb the untouched ridge; an uphill winch can pull the ch
   assert(s.vehicle.x>before.x+250);assert(s.vehicle.y<before.y-120);assert(s.cable.length<300);assert(s.cable.load>=0&&s.cable.load<=100);
 });
 test('unpowered wheels do not create thrust in mid-air',()=>{
-  const a=createWorld(),b=createWorld();for(const s of [a,b]){s.terrain.fill(0);s.logs=[];s.trees=[];driver(s);}
+  const a=createWorld(),b=createWorld();for(const s of [a,b]){s.terrain.fill(0);s.terrainVersion++;s.logs=[];s.trees=[];driver(s);}
   a.players[0].input={right:true};advance(a,15);advance(b,15);assert(Math.abs(a.vehicle.x-b.vehicle.x)<.01);assert(a.vehicle.y>650);
 });
 test('soil excavation and replacement conserve shared soil; bedrock and reach are enforced',()=>{

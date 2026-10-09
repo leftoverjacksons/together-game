@@ -1,13 +1,13 @@
 // Fixed-step, server-authoritative position-based vehicle physics.
+import {initialSurface,terrainMesh,terrainContact,terrainFloor,density} from './terrain.mjs';
+export {initialSurface,terrainMesh,terrainContact,terrainFloor,density};
 export const WORLD={width:4480,height:1280,cell:20,cols:224,rows:64,camp:4170};
 export const TOOLS=['dig','fill','cable','saw','timber'];
 export const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const hypot=Math.hypot,G=760,H=1/120;
-const profile=[[0,740],[620,740],[900,700],[1110,495],[1350,440],[1520,480],[1730,650],[1840,790],[1950,870],[2090,690],[2280,570],[2460,520],[2660,650],[2850,730],[2990,670],[3130,400],[3370,370],[3570,470],[3820,610],[4080,620],[4480,620]];
-export function initialSurface(x){for(let i=1;i<profile.length;i++)if(x<=profile[i][0]){const [a,y]=profile[i-1],[b,z]=profile[i];return y+(z-y)*(x-a)/(b-a);}return 620;}
 export function tile(s,c,r){if(c<0||c>=WORLD.cols||r>=WORLD.rows)return 2;if(r<0)return 0;return Number(s.terrain[r*WORLD.cols+c]);}
-export function solid(s,x,y){return tile(s,Math.floor(x/20),Math.floor(y/20))>0;}
-export function surface(s,x){for(let r=0;r<WORLD.rows;r++)if(tile(s,Math.floor(x/20),r))return r*20;return WORLD.height;}
+export function solid(s,x,y){return density(s,x,y)>0;}
+export function surface(s,x){const y=terrainFloor(s,x);return Number.isFinite(y)?y:WORLD.height;}
 function particle(x,y,r=10,m=1){return {x,y,ox:x,oy:y,r,inv:1/m,ground:false,nx:0,ny:-1};}
 function makeVehicle(x,y){return {x,y,angle:0,speed:0,brake:true,points:[particle(x-116,y-65,9,2),particle(x+116,y-65,9,2),particle(x+116,y+48,9,2),particle(x-116,y+48,9,2),particle(x-86,y+81,36),particle(x+86,y+81,36)],grounded:0,slip:0};}
 export function createWorld(){
@@ -136,11 +136,11 @@ function integrate(p,dt,ax=0,ay=G){const dx=clamp((p.x-p.ox)*.999,-5,5),dy=clamp
 function distance(a,b,rest,stiff=1){const dx=b.x-a.x,dy=b.y-a.y,d=hypot(dx,dy)||1,err=(d-rest)/d*stiff,w=a.inv+b.inv;const cx=dx*err,cy=dy*err;a.x+=cx*a.inv/w;a.y+=cy*a.inv/w;b.x-=cx*b.inv/w;b.y-=cy*b.inv/w;}
 function push(p,nx,ny,depth,friction=0){p.x+=nx*depth;p.y+=ny*depth;let vx=p.x-p.ox,vy=p.y-p.oy;const inward=vx*nx+vy*ny;if(inward<0){vx-=nx*inward;vy-=ny*inward;}const tang=vx*(-ny)+vy*nx;vx-=(-ny)*tang*friction;vy-=nx*tang*friction;p.ox=p.x-vx;p.oy=p.y-vy;if(ny<-.25){if(!p.ground||Math.abs(nx)>Math.abs(p.nx)){p.nx=nx;p.ny=ny;}p.ground=true;}}
 function collideTerrain(s,p,friction=.02){
-  for(let r=Math.floor((p.y-p.r)/20);r<=Math.floor((p.y+p.r)/20);r++)for(let c=Math.floor((p.x-p.r)/20);c<=Math.floor((p.x+p.r)/20);c++){
-    if(!tile(s,c,r))continue;const l=c*20,t=r*20,qx=clamp(p.x,l,l+20),qy=clamp(p.y,t,t+20),dx=p.x-qx,dy=p.y-qy,d=hypot(dx,dy);
-    if(d>0&&d<p.r)push(p,dx/d,dy/d,p.r-d,friction);
-    else if(d===0){const choices=[[p.x-l,-1,0],[l+20-p.x,1,0],[p.y-t,0,-1],[t+20-p.y,0,1]].sort((a,b)=>a[0]-b[0]);const [dist,nx,ny]=choices[0];push(p,nx,ny,p.r+dist,friction);}
-  }
+  const contact=terrainContact(s,p.x,p.y,p.r);
+  if(contact)push(p,contact.nx,contact.ny,contact.depth,friction);
+  if(p.x<p.r)push(p,1,0,p.r-p.x,friction);
+  if(p.x>WORLD.width-p.r)push(p,-1,0,p.x-WORLD.width+p.r,friction);
+  if(p.y>WORLD.height-p.r)push(p,0,-1,p.y-WORLD.height+p.r,friction);
 }
 export function distanceSegment(x,y,a,b){const dx=b.x-a.x,dy=b.y-a.y,t=clamp(((x-a.x)*dx+(y-a.y)*dy)/(dx*dx+dy*dy||1),0,1);return {d:hypot(x-a.x-t*dx,y-a.y-t*dy),x:a.x+t*dx,y:a.y+t*dy,t};}
 function collideSegment(p,a,b,r,dynamic=false){const q=distanceSegment(p.x,p.y,a,b),sum=p.r+r;if(q.d>=sum)return;let nx=(p.x-q.x)/(q.d||1),ny=(p.y-q.y)/(q.d||1);if(!q.d){nx=0;ny=-1;}const depth=sum-q.d;if(dynamic){push(p,nx,ny,depth*.65,.006);a.x-=nx*depth*.35*(1-q.t);a.y-=ny*depth*.35*(1-q.t);b.x-=nx*depth*.35*q.t;b.y-=ny*depth*.35*q.t;}else push(p,nx,ny,depth,.02);}
@@ -150,7 +150,7 @@ function suspension(v,index,lx){const wheel=v.points[index],target=pose(v,lx,81)
 function edgeContacts(s,a,b){const len=hypot(b.x-a.x,b.y-a.y),count=Math.ceil(len/14);for(let i=1;i<count;i++){const t=i/count,x=a.x*(1-t)+b.x*t,y=a.y*(1-t)+b.y*t,sample=particle(x,y,7);sample.ox=a.ox*(1-t)+b.ox*t;sample.oy=a.oy*(1-t)+b.oy*t;collideTerrain(s,sample,.35);const dx=sample.x-x,dy=sample.y-y,w=(1-t)**2+t*t;a.x+=dx*(1-t)/w;a.y+=dy*(1-t)/w;b.x+=dx*t/w;b.y+=dy*t/w;}}
 function physics(s,dt,throttle,brake,reel,payout){const v=s.vehicle;
   for(const log of s.logs){if(log.heldBy)continue;integrate(log.a,dt);integrate(log.b,dt);}
-  for(let i=0;i<v.points.length;i++){const p=v.points[i];let ax=0,ay=G;if(i>=4&&p.ground){const drive=throttle*5200;ax=-p.ny*drive;ay+=p.nx*drive;}
+  for(let i=0;i<v.points.length;i++){const p=v.points[i];let ax=0,ay=G;if(i>=4&&p.ground){const drive=throttle*2200*Math.max(0,1-Math.abs(v.speed)/150);ax=-p.ny*drive;ay+=p.nx*drive;}
     if(i===1&&s.cable){const cable=s.cable,dx=cable.x-p.x,dy=cable.y-p.y,d=hypot(dx,dy)||1;if(reel)cable.length=Math.max(45,cable.length-46*dt);if(payout)cable.length=Math.min(740,cable.length+70*dt);const force=clamp((d-cable.length)*130,0,10000);ax+=dx/d*force;ay+=dy/d*force;cable.load=force/10000*100;}
     integrate(p,dt,ax,ay);
   }
@@ -169,7 +169,7 @@ function playerMove(s,p,dt){const move=(p.input.right?1:0)-(p.input.left?1:0);
   const blocked=(xx,yy)=>[-9,9].some(dx=>[-9,-28,-44].some(dy=>solid(s,xx+dx,yy+dy)));
   if(!blocked(nx,p.y))p.x=nx;else if(p.ground&&!blocked(nx,p.y-20)){p.x=nx;p.y-=20;}
   let ny=p.y+p.vy*dt;p.ground=false;
-  if(p.vy>=0){for(const dx of [-8,8])if(solid(s,p.x+dx,ny)){ny=Math.floor(ny/20)*20;p.vy=0;p.ground=true;}}
+  if(p.vy>=0){const floor=Math.min(terrainFloor(s,p.x-7,p.y-23,ny+3),terrainFloor(s,p.x+7,p.y-23,ny+3));if(Number.isFinite(floor)&&ny>=floor-2){ny=floor;p.vy=0;p.ground=true;}}
   else if(solid(s,p.x-8,ny-46)||solid(s,p.x+8,ny-46)){ny=(Math.floor((ny-46)/20)+1)*20+46;p.vy=0;}
   for(const l of s.logs)if(!l.heldBy&&p.vy>=0){const q=distanceSegment(p.x,ny,l.a,l.b);if(q.d<16&&ny<q.y+8&&p.y<=q.y){ny=q.y-12;p.vy=0;p.ground=true;}}
   p.y=ny;if(p.y>WORLD.height-35){p.x=s.vehicle.x-150;p.y=surface(s,p.x)-5;p.vy=0;}

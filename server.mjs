@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createWorld, addPlayer, interact, toolAction, step, snapshot } from './shared/game.mjs';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
-const routes = { '/': 'public/index.html', '/game.js': 'public/overland.js', '/style.css': 'public/style.css', '/shared/game.mjs': 'shared/game.mjs', '/shared/physics.mjs': 'shared/physics.mjs' };
+const routes = { '/': 'public/index.html', '/game.js': 'public/overland.js', '/style.css': 'public/style.css', '/shared/game.mjs': 'shared/game.mjs', '/shared/physics.mjs': 'shared/physics.mjs', '/shared/terrain.mjs': 'shared/terrain.mjs' };
 const code = () => randomBytes(5).toString('hex').toUpperCase();
 export function createGameServer() {
   const rooms = new Map();
