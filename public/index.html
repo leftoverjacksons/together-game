@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#263b36"><title>Together � A little home, a long way</title>
+  <meta name="description" content="A two-player cooperative road trip. Mend the road, mind the winch, and take your little home to Stillwater.">
+  <link rel="stylesheet" href="/style.css"><script type="module" src="/game.js"></script>
+</head>
+<body>
+  <canvas id="world" aria-label="Side-scrolling cooperative journey"></canvas>
+  <div class="vignette"></div>
+  <header class="masthead"><a class="brand" href="/" aria-label="Together home"><span class="brand-icon"></span> together<span class="brand-dot">.</span></a><span class="edition">THE COAST ROAD <span> / </span> FIELD NOTES 001</span><button id="sound" class="quiet" aria-label="Enable ambient audio">Sound off</button></header>
+  <main id="welcome">
+    <div class="eyebrow"><span></span> A SMALL COOPERATIVE ADVENTURE</div>
+    <h1>A little home.<br>A long way<br><em>together.</em></h1>
+    <p class="intro">The road has seen better days.<br>Good thing there are two of you.</p>
+    <form id="lobby">
+      <label for="name">YOUR TRAVELER</label><input id="name" maxlength="18" placeholder="What should we call you?" value="" autocomplete="nickname" required>
+      <div class="lobby-actions"><button class="primary" id="create" type="submit">Start a journey <span>?</span></button><button class="secondary" type="button" id="join-toggle">Join a friend</button></div>
+      <div id="join-fields" hidden><label for="code">YOUR FRIEND'S TRIP CODE</label><div class="join-row"><input id="code" maxlength="10" placeholder="Trip code" autocapitalize="characters"><button class="primary" type="button" id="join">Join </button></div></div>
+      <button id="resume" type="button" class="resume" hidden>Continue your last journey </button>
+      <p id="error" role="alert"></p>
+    </form>
+    <div class="welcome-foot"><span class="two-people">? ?</span> TWO TRAVELERS <b>�</b> ONE HOME <b>�</b> NO HURRY</div>
+  </main>
+  <div id="scene-caption"><span>01 / THE COAST ROAD</span><p>Somewhere worth getting to.</p><small>A playable first chapter � keyboard recommended</small></div>
+  <section id="hud" hidden>
+    <div class="trip-bar"><div class="trip-badge"><span class="live-dot"></span><span id="connection">Connecting</span></div><button id="invite" class="quiet">Invite a friend ?</button><button id="help" class="quiet">Field guide ?</button><button id="leave" class="quiet">Leave</button></div>
+    <div class="objective-card"><span class="eyebrow">THE ROAD TO STILLWATER</span><h2 id="objective"></h2><div class="route-line"><span id="route-progress"></span></div><div class="route-labels"><span>OLD DEPOT</span><span>STILLWATER</span></div></div>
+    <div id="crew"></div>
+    <div id="tension-box" hidden><span>BRIDGE CABLE</span><meter id="tension" min="0" max="100" low="25" optimum="100" value="100"></meter><small id="tension-label">Keep the winch running</small></div>
+    <div class="bottom-bar"><div class="controls"><span><kbd>A</kbd><kbd>D</kbd> move</span><span><kbd>SPACE</kbd> jump / winch</span><span><kbd>E</kbd> interact</span></div><button id="journal-button" class="quiet">Journey notes <span id="note-count">0</span></button></div>
+    <div id="interaction" hidden><kbd>E</kbd><span></span></div>
+    <div id="toast" role="status"></div>
+    <div id="solo-hint">Traveling solo for now. The winch helps automatically while you drive.</div>
+    <div id="touch"><button data-key="left" aria-label="Move left"></button><button data-key="right" aria-label="Move right"></button><button data-key="jump">Jump / winch</button><button id="touch-e">E</button></div>
+  </section>
+  <dialog id="guide"><button class="close" data-close="guide" aria-label="Close field guide">x</button><div class="eyebrow">A PAGE FROM THE GLOVEBOX</div><h2>Making a home<br>of the road.</h2><p>You can both do every job. Walk between stations and trade places whenever you like.</p><dl><dt>A / D or  / </dt><dd>Walk. At the wheel, drive the house.</dd><dt>Space</dt><dd>Jump on foot. Hold at the winch to pull.</dd><dt>E</dt><dd>Use the nearest object, take a station, or leave it. The rear door lets you step outside.</dd></dl><ol><li>Bring <b>three planks</b> from the roadside stacks to the bridge.</li><li>Walk across and secure the cable at the <b>far anchor</b>. You can also jump the stepping stones before the deck is repaired.</li><li>One traveler drives; the other holds <b>Space at the winch</b>. If cable tension drops, stop and wind it back up.</li><li>Hook the fallen pine, then return to the winch to pull it clear.</li><li>Bring everyone home to Stillwater. Say hello to anyone you meet.</li></ol><p class="fine">This first chapter is handcrafted. Trips live in the running server's memory and expire after two hours with nobody connected. Keep your trip link private. Solo driving includes winch assistance.</p><button class="primary" data-close="guide">Let's get going </button></dialog>
+  <dialog id="journal"><button class="close" data-close="journal" aria-label="Close journey notes">x</button><div class="eyebrow">THINGS WE'LL REMEMBER</div><h2>Journey notes.</h2><div id="notes"></div></dialog>
+  <dialog id="invitation"><button class="close" data-close="invitation" aria-label="Close invitation">x</button><div class="eyebrow">ROOM FOR ONE MORE</div><h2>Better together.</h2><p>Send this link to your fellow traveler. They can join from another browser connected to this server.</p><input id="invite-url" readonly aria-label="Invitation URL"><button id="copy" class="primary">Copy invitation</button><p>Trip code: <strong id="trip-code"></strong></p><p class="fine" id="local-note"></p></dialog>
+  <dialog id="ending"><div class="eyebrow">CHAPTER ONE � COMPLETE</div><h2>Home is wherever<br>we park.</h2><p>You brought your little house to Stillwater. A warm light, a quiet shore, and nowhere else you need to be.</p><p id="dog-ending"></p><button id="stay" class="primary">Stay a little while</button><button id="new-trip" class="secondary">Another journey</button></dialog>
+</body></html>

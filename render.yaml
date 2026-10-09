@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: together-game
+    runtime: node
+    plan: free
+    buildCommand: npm run check
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+# Use ONE instance: active rooms live in memory. Redeploying restarts trips.
