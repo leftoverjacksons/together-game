@@ -1,9 +1,9 @@
 {
   "name": "together-game",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "A little home. A long way together. Two-player cooperative road trip prototype.",
-  "scripts": { "start": "node server.mjs", "dev": "node --watch server.mjs", "test": "node --test", "check": "node --check server.mjs && node --check shared/game.mjs && node --check public/game.js" },
-  "engines": { "node": ">=22" }
+  "scripts": { "start": "node server.mjs", "dev": "node --watch server.mjs", "test": "node --test", "check": "node --check server.mjs && node --check shared/game.mjs && node --check shared/physics.mjs && node --check public/overland.js" },
+  "engines": { "node": "24.x" }
 }
