@@ -90,7 +90,7 @@ Design pillars:
 
 ## 7. Players, tools and items
 
-- Each player carries **3 tool slots**, chosen from: shovel, axe, saw, hammer. Starting loadout: shovel, axe, saw, hammer split between the two players (to be tuned; e.g. 3 + 3 with overlap).
+- Each player carries **3 tool slots**, chosen from: shovel, axe, saw, hammer. *(M2 gives both players all four, until item handoff exists.)* Starting loadout: shovel, axe, saw, hammer split between the two players (to be tuned; e.g. 3 + 3 with overlap).
   - Number keys switch tools.
 - Possible finds: rope, jack, lantern, bucket, pickaxe, seeds.
 - Items can be **dropped**, **handed to the other player**, or **stored in the camper**.
@@ -217,10 +217,21 @@ Design pillars:
 - **Local mode:** the same `Sim` runs in the page (`LocalSession`). This is how offline practice works now, and the path for local co-op later.
 - Reused from the original prototype: `render.yaml`, the `/health` check, the Dockerfile, room codes, invite links, session tokens.
 
-### Known limitations (M1)
+- **Structures (M2):** `shared/structure.mjs`.
+  - Boards are static planck bodies.
+  - Contact impulses (`post-solve`) are accumulated per board.
+  - A 2D frame stiffness solve (Cholesky) runs at 10 Hz per connected part.
+  - A singular stiffness matrix means the part is unsupported ("shaky").
+- **Forest lane (M2):** a smoothed floor function. It is not physics: forest logs are kinematic objects that become planck bodies when brought onto the road.
+- **Audio (M2):** Web Audio synthesis in `client/audio.js`.
+
+### Known limitations
 - On-foot travellers do not collide with the camper, and cannot stand on it.
-- A placed brush of soil is not checked for floating geometry. Slumping will address this (§10).
-- The camper's mass is fixed. Cargo and animals will add mass later.
+- The camper's mass changes with roof-rack cargo only, so far. Animals will add more.
+- Both players currently carry all four tools. Three slots, plus dropping and handing tools over, come with items (M3).
+- Rain is a manual toggle (R) until weather exists.
+- Unsupported structures get a 6 s grace period ("shaky") so they can be braced. This is a deliberate gameplay concession.
+- Only trees in the forest lane exist so far. Trees standing in the road lane as obstacles are planned.
 
 ---
 
@@ -244,7 +255,7 @@ Design pillars:
 ## 14. Milestones
 
 1. **M1 — Core loop:** camper physics on procedural terrain; dig and fill; two players online; board and drive. *(First pass done 2026-10-10.)*
-2. **M2 — Timber and building:** handling fix, slumping, forest lane with trees, tool slots, felling, hauling, sawing, roof rack, structural boards, sound effects, visual detail pass. *(In progress 2026-10-10.)*
+2. **M2 — Timber and building:** handling fix, slumping, forest lane with trees, tool slots, felling, hauling, sawing, roof rack, structural boards, sound effects, visual detail pass. *(First pass done 2026-10-10.)*
 3. M3 — Winch, items and finds, dropping and handing items, cargo mass.
 4. M4 — Animals: rescue interactions, small animals as the score, large animals as helpers.
 5. M5 — Stretches, camps, sanctuary, meta-progression.
