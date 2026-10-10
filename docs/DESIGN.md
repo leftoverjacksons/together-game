@@ -33,11 +33,11 @@ Design pillars:
 
 ## 3. Dimensionality
 
-- **[LEANING]** A 2D side-view physics plane, rendered with parallax depth.
+- **[DECIDED]** A 2D side-view physics plane, rendered with parallax depth.
   - A **walkable background lane for players only**: they can step "into the trees" to gather resources, find items or reach animals, while the camper stays on the main plane.
   - A **branching route graph**: at forks, players choose between segments (e.g. river valley vs. ridgeline). Each run is linear overall.
   - The camper is drawn as a **dollhouse cross-section**: the interior and stations are visible while driving.
-- Isometric was considered; the comparison is in §13. It is still open until confirmed.
+- Isometric was considered and rejected; the comparison is in §13.
 
 ---
 
@@ -50,6 +50,7 @@ Design pillars:
     - The camper's weight resets.
     - Players choose a limited number of items to carry into the next stretch.
     - Unlocks and camper upgrades are spent here.
+  - Structure confirmed 2026-10-10.
   - **[OPEN]** Exact meta-progression: what unlocks, how quickly, and whether biomes unlock in order.
 
 ---
@@ -106,27 +107,47 @@ Design pillars:
 
 ## 9. Animals
 
-- Animals appear along the route and must be **rescued**: reached, calmed, carried or coaxed aboard.
-- Each animal adds mass to the camper.
-- **[OPEN]** Whether some animals grant abilities. For example: a dog finds buried items, a goat reaches high anchors, a mule adds pulling force.
+**[DECIDED]** Animals are companions with simple behaviour, not static cargo. They ride in the camper, hop out when it stops, wander near the players, follow when the camper moves, and help in specific situations. Each adds mass to the camper.
+
+- **Dog** — found early in the first stretch and stays for the whole game (it is not delivered to the sanctuary).
+- Rescuable: rabbit, chipmunk, deer, fox, hawk, bear.
+- Rescued animals (all except the dog) are delivered to the sanctuary at camp.
+
+### Initial bonuses **[LEANING]** — to be tuned in play
+
+| Animal | Mass | Helps by | Trigger |
+|---|---|---|---|
+| Dog | Light | Sniffs out buried items and nearby animals; barks before slope collapse | Passive; points or barks |
+| Rabbit | Very light | Loosens soil: digging near it is faster | When players dig nearby |
+| Chipmunk | Very light | Gathers small spilled items and loose cargo back into the hold | After a spill or crash |
+| Deer | Medium | Senses unstable ground: highlights soil that is likely to slump | Storms, fresh earthworks |
+| Fox | Light | Night vision: scouts ahead at night, revealing terrain in a faint light | Night |
+| Hawk | Light | Scouts the route: previews the next fork and extends how far the camera sees ahead | Called, with a cooldown |
+| Bear | Very heavy | Shoves logs and boulders; helps right a tipped camper | Called; big mass penalty |
+
+- **[OPEN]** How players call an animal to help (a "whistle" action vs. purely contextual).
+- **[OPEN]** Rescue interactions per animal (e.g. free from a snare, coax with food, carry).
 - **[OPEN]** Care needs while aboard (food or calm) as a light pressure source.
 
 ---
 
 ## 10. Pressure sources
 
-These create urgency and force role-switching. Pick a small set per stretch.
-- Nightfall: visibility drops; the camper has lights.
-- Storm: soil turns to mud and traction drops.
-- A river that rises.
-- Animal care needs.
-- **[OPEN]** Which of these exist, and whether to have a stretch timer at all.
+**[DECIDED]** Two pressure sources to start with:
+
+- **Storms**
+  - Rain lowers traction on soil and wet boards.
+  - **Slumping:** disturbed soil (anything dug or placed) slides when its slope is steeper than its angle of repose. Storms lower that angle, so fresh ramps and cut banks sag over time. Native, undisturbed soil stays stable, except in heavy storms.
+  - Boards placed as shoring (a retaining wall) stop slumping. This gives building a second use.
+- **Night**
+  - Darkness. Players see only what is lit by their headlamps, the camper's headlights, and the lantern at the camper. The fox adds faint night vision.
+- **[OPEN]** Other sources (rising rivers, animal needs) are deferred.
 
 ---
 
 ## 11. Art direction
 
-- **[LEANING]** Soft, well-lit, painted vector. Not pixel art: it flickered in past attempts, and it scales poorly to arbitrary zoom levels.
+- **[DECIDED]** Soft, well-lit, painted vector. Not pixel art: it flickered in past attempts, and it scales poorly to arbitrary zoom levels.
   - Background layers: gradient silhouettes with atmospheric perspective (layers grow lighter and hazier with distance), in the style of *Alto*.
   - Foreground: rounded vector shapes with soft rim lighting and contact shadows.
   - Lighting: a global colour grade driven by time of day. Golden hour by default. At night, cool blue, contrasted with the camper's warm lantern light.
@@ -138,11 +159,31 @@ These create urgency and force role-switching. Pick a small set per stretch.
 ## 12. Technical architecture
 
 - **[DECIDED]** Node server, WebSockets (`ws`), one Render instance, rooms held in memory. A redeploy or the free tier sleeping wipes active trips.
-- **[LEANING]** Physics: planck.js (Box2D port), shared between server and browser.
-- **[LEANING]** Rendering: PixiJS.
-- **[LEANING]** Bundling: esbuild. Render build command: `npm install && npm run build`.
-- Netcode: the server owns the simulation and steps it at 60 Hz, sending snapshots at 20–30 Hz. Each client predicts its own character locally and interpolates everything else. In local co-op, the same simulation runs in the browser.
+- **[DECIDED]** Physics: planck.js (Box2D port), shared between server and browser.
+- **[DECIDED]** Rendering: PixiJS 8, with all drawing as vector Graphics in world metres (y up).
+- **[DECIDED]** Bundling: esbuild. Render build: `npm ci --include=dev && npm run build`.
+- **Authority split (M1):**
+  - The server owns the camper, the terrain, seat claims and tool use.
+  - Each client owns its own on-foot avatar, using a kinematic controller against the terrain density field, and reports it at 20 Hz.
+  - This is trust-based, which is acceptable for a two-friend co-op game, and it removes input lag for walking.
+- **Netcode:**
+  - The server steps the simulation at 60 Hz and broadcasts snapshots at 20 Hz.
+  - Clients interpolate snapshots about 110 ms behind.
+  - Terrain edits are broadcast as `(node index, density)` pairs. A late joiner regenerates from the seed and applies the accumulated edit list.
+  - Known cost: the driver feels round-trip latency plus the interpolation delay on throttle. Acceptable for a heavy camper so far; revisit if it feels sluggish online.
+- **Terrain:**
+  - 0.25 m density grid.
+  - Separate rock mask that cannot be dug.
+  - Chunks of 32×32 cells.
+  - Marching squares produces both the planck edge fixtures and the render mask. Collision is built only within ±44 m of the camper.
+  - Strata and bedrock are drawn as smooth bands following the generated surface, clipped by the terrain mask.
+- **Local mode:** the same `Sim` runs in the page (`LocalSession`). This is how offline practice works now, and the path for local co-op later.
 - Reused from the original prototype: `render.yaml`, the `/health` check, the Dockerfile, room codes, invite links, session tokens.
+
+### Known limitations (M1)
+- On-foot travellers do not collide with the camper, and cannot stand on it.
+- A placed brush of soil is not checked for floating geometry. Slumping will address this (§10).
+- The camper's mass is fixed. Cargo and animals will add mass later.
 
 ---
 
@@ -165,7 +206,7 @@ These create urgency and force role-switching. Pick a small set per stretch.
 
 ## 14. Milestones
 
-1. **M1 — Core loop:** camper physics on procedural terrain; dig and fill; two players online; board and drive.
+1. **M1 — Core loop:** camper physics on procedural terrain; dig and fill; two players online; board and drive. *(First pass done 2026-10-10.)*
 2. M2 — Winch, timber, saw, boards, building.
 3. M3 — Items, loadouts, handoff, cargo hold with mass.
 4. M4 — Animals and rescue.
@@ -183,3 +224,8 @@ These create urgency and force role-switching. Pick a small set per stretch.
 | 2026-10-10 | Switch networking from HTTP POST + SSE to WebSockets. |
 | 2026-10-10 | Roguelite stretches with persistent progress; recovery is always possible. |
 | 2026-10-10 | Local co-op is a goal; one shared camera in both modes. |
+| 2026-10-10 | Side view with depth layers confirmed. |
+| 2026-10-10 | Stretch / camp / sanctuary structure confirmed. |
+| 2026-10-10 | Dog found early, stays all game. Rescuable: rabbit, chipmunk, deer, fox, hawk, bear. Animals follow and help, not static cargo. |
+| 2026-10-10 | M1 tech: planck.js, PixiJS 8, esbuild; client-owned avatars, server-owned camper and terrain. |
+| 2026-10-10 | Pressure sources: storms (slick ground, slumping earthworks) and night (headlamps and headlights only). |

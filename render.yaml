@@ -3,10 +3,11 @@ services:
     name: together-game
     runtime: node
     plan: free
-    buildCommand: npm run check
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: 24
-# Use ONE instance: active rooms live in memory. Redeploying restarts trips.
+# Use ONE instance: active trips live in memory. Redeploying (or the free
+# instance sleeping) ends trips in progress.

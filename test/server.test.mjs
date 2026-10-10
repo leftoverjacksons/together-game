@@ -1,21 +1,75 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createGameServer} from '../server.mjs';
-test('two live clients receive shared terrain edits and physics, with authorization and reconnects',async t=>{
-  const {server,rooms}=createGameServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>{server.closeAllConnections();server.close();});
-  const base=`http://127.0.0.1:${server.address().port}`;
-  const post=async(path,b)=>{const r=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return {status:r.status,data:await r.json()};};
-  const a=(await post('/api/rooms',{name:'A'})).data,b=(await post('/api/join',{name:'B',code:a.code})).data;
-  const auth=p=>({code:p.code,token:p.token});
-  assert.equal((await post('/api/join',{code:a.code,name:'C'})).status,409);assert.equal((await post('/api/tool',{code:a.code,token:'wrong',action:{recover:true}})).status,403);
-  const controllers=[new AbortController(),new AbortController()];t.after(()=>controllers.forEach(c=>c.abort()));
-  async function* frames(p,controller){const r=await fetch(`${base}/api/events?code=${p.code}&token=${p.token}`,{signal:controller.signal});const reader=r.body.getReader();let text='';const decoder=new TextDecoder();while(true){const {value,done}=await reader.read();if(done)return;text+=decoder.decode(value,{stream:true});let i;while((i=text.indexOf('\n\n'))>=0){const frame=text.slice(0,i);text=text.slice(i+2);if(frame.startsWith('data: '))yield JSON.parse(frame.slice(6));}}}
-  const fa=frames(a,controllers[0]),fb=frames(b,controllers[1]);assert((await fa.next()).value.terrain);assert((await fb.next()).value.terrain);
-  const room=rooms.get(a.code),p=room.state.players[0];Object.assign(p,{inside:false,x:510,y:740,tool:'dig'});
-  const result=await post('/api/tool',{...auth(a),action:{x:550,y:750}});assert.equal(result.status,200);
-  for(const stream of [fa,fb]){let got;for(let i=0;i<10;i++){got=(await stream.next()).value;if(got.terrainVersion===1)break;}assert.equal(got.terrainVersion,1);assert.equal(got.terrain[37*224+27],'0');}
-  await post('/api/input',{...auth(a),sequence:8,right:true});await post('/api/input',{...auth(a),sequence:7,left:true});assert.equal(p.input.right,true);
-  const resume=(await post('/api/join',auth(a))).data;assert.equal(resume.id,a.id);assert.equal(resume.sequence,8);assert.equal(resume.state.terrain[37*224+27],'0');
-  for(const url of ['/','/game.js','/shared/game.mjs','/shared/physics.mjs','/style.css'])assert.equal((await fetch(base+url)).status,200);
-  assert.equal((await fetch(base+'/server.mjs')).status,404);controllers.forEach(c=>c.abort());
+import WebSocket from 'ws';
+import { createGameServer } from '../server/index.mjs';
+
+function listen() {
+  const { server } = createGameServer();
+  return new Promise(r => server.listen(0, () => r({ server, port: server.address().port })));
+}
+
+function client(port, room, name, token = '') {
+  const ws = new WebSocket(`ws://localhost:${port}/ws?room=${room}&name=${name}&token=${token}`);
+  const msgs = [];
+  const waiters = [];
+  ws.on('message', d => { const m = JSON.parse(d); msgs.push(m); for (const w of [...waiters]) if (w.pred(m)) { waiters.splice(waiters.indexOf(w), 1); w.res(m); } });
+  const next = pred => { const m = msgs.find(pred); if (m) return Promise.resolve(m); return new Promise(res => waiters.push({ pred, res })); };
+  return { ws, msgs, next, send: m => ws.send(JSON.stringify(m)) };
+}
+
+test('two travellers share a trip; a third is turned away', async () => {
+  const { server, port } = await listen();
+  try {
+    const health = await fetch(`http://localhost:${port}/health`).then(r => r.json());
+    assert.equal(health.ok, true);
+    const { code } = await fetch(`http://localhost:${port}/api/rooms`, { method: 'POST' }).then(r => r.json());
+    assert.match(code, /^[0-9A-F]{6}$/);
+
+    const a = client(port, code, 'Ada');
+    const wa = await a.next(m => m.t === 'welcome');
+    assert.ok(wa.token && wa.seed >= 0);
+    const b = client(port, code, 'Bo');
+    const wb = await b.next(m => m.t === 'welcome');
+    assert.equal(wb.seed, wa.seed);
+
+    const snap = await a.next(m => m.t === 'snap' && m.players.length === 2);
+    assert.deepEqual(snap.players.map(p => p.name).sort(), ['Ada', 'Bo']);
+
+    const c = client(port, code, 'Cy');
+    const err = await c.next(m => m.t === 'error');
+    assert.match(err.msg, /two travellers/);
+
+    // Reconnecting with a token resumes the same traveller.
+    a.ws.close();
+    const a2 = client(port, code, 'Ada', wa.token);
+    const wa2 = await a2.next(m => m.t === 'welcome');
+    assert.equal(wa2.id, wa.id);
+
+    // Terrain edits reach the other traveller.
+    const me = wa2.snap.players.find(p => p.id === wa.id);
+    a2.send({ t: 'avatar', a: { mode: 'out', x: 30, y: 16, vx: 0, vy: 0, facing: 1, lx: 0, onGround: true } });
+    await new Promise(r => setTimeout(r, 50));
+    for (let k = 0; k < 6; k++) { a2.send({ t: 'dig', x: 31, y: 15.6 - k * 0.2 }); await new Promise(r => setTimeout(r, 80)); }
+    const edit = await b.next(m => m.t === 'terrain');
+    assert.ok(edit.i.length > 0 && edit.i.length === edit.v.length);
+    assert.ok(me);
+    for (const x of [a2, b, c]) x.ws.close();
+  } finally {
+    server.close();
+  }
+});
+
+test('unknown trip codes are rejected and static files are served', async () => {
+  const { server, port } = await listen();
+  try {
+    const c = client(port, 'ZZZZZZ', 'Nobody');
+    const err = await c.next(m => m.t === 'error');
+    assert.match(err.msg, /not here/);
+    const html = await fetch(`http://localhost:${port}/`).then(r => r.text());
+    assert.match(html, /<title>Together<\/title>/);
+    assert.equal((await fetch(`http://localhost:${port}/../package.json`)).status, 404);
+    c.ws.close();
+  } finally {
+    server.close();
+  }
 });
