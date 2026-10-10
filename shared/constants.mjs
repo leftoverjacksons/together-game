@@ -20,13 +20,14 @@ export const STATION_RANGE = 0.6;
 export const DOOR_RANGE = 1.8;       // board when this close to the door (world distance)
 
 // Tools and items. Each traveller has TOOL_SLOTS slots; spares live in the
-// camper's toolbox or lie in the world to be found.
+// camper's storage (12 tiles) or lie in the world to be found.
 export const TOOLS = ['shovel', 'axe', 'saw', 'hammer', 'pickaxe', 'jack'];
 export const TOOL_NAMES = { shovel: 'Shovel', axe: 'Axe', saw: 'Saw', hammer: 'Hammer', pickaxe: 'Pickaxe', jack: 'Jack' };
 export const TOOL_SLOTS = 3;
 export const START_TOOLS = [['shovel', 'axe', 'hammer'], ['shovel', 'saw', 'hammer']];
 export const START_TOOLBOX = ['saw', 'axe'];
-export const TOOLBOX_SIZE = 6;
+export const TOOLBOX_SIZE = 12;
+export const STORAGE_RANGE = 2.2;   // on foot, this close to the camper's body you can reach its storage
 export const ITEM_RANGE = 1.3;
 export const GIVE_RANGE = 1.8;
 

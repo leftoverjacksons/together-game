@@ -9,7 +9,7 @@ export class Input {
       const k = e.key.toLowerCase();
       if (!this.down.has(k)) this.pressed.add(k);
       this.down.add(k);
-      if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
+      if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'tab'].includes(k)) e.preventDefault();
     });
     addEventListener('keyup', e => this.down.delete(e.key.toLowerCase()));
     addEventListener('blur', () => { this.down.clear(); this.mouse.left = this.mouse.right = false; });

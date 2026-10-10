@@ -17,7 +17,10 @@ export class CamperView {
     this.front = new Container();    // frame, roof, bumper drawn over travellers
     this.glow = new Graphics();
     this.rack = new Graphics();
-    this.body.addChild(this.back, this.interior, this.front, this.rack, this.glow);
+    this.side = new Container();     // the near wall: shown unless someone is on foot inside
+    this.body.addChild(this.back, this.interior, this.side, this.front, this.rack, this.glow);
+    this.sideAlpha = 1;
+    this.#drawSide();
     this.rackKey = '';
     this.root.addChild(this.body, this.arms, ...this.wheels);
     parent.addChild(this.root);
@@ -124,6 +127,45 @@ export class CamperView {
     for (let k = 0; k < 4; k++) f.rect(3.16 + k * 0.06, -0.12, 0.02, 0.16).fill({ color: 0x8a8580, alpha: 0.6 });
     f.circle(3.32, 0.5, 0.13).fill(PAL.lamp);                                 // headlight
     f.rect(-3.42, 0.25, 0.14, 0.25).fill(0xd24b3f);                           // taillight
+  }
+
+  #drawSide() {
+    const art = artSprite('camper.side');
+    if (art) { this.side.addChild(art); return; }
+    const g = new Graphics();
+    const wall = [-2.95, -0.62, 2.65, -0.62, 3.35, 0.2, 3.1, 1.85, -3.2, 1.85, -3.3, -0.05];
+    g.poly(wall).fill(PAL.body);
+    // Soft shading toward the bottom and a warm edge light on top.
+    g.poly([-2.95, -0.62, 2.65, -0.62, 2.9, -0.2, -3.15, -0.2]).fill({ color: PAL.bodyShade, alpha: 0.8 });
+    g.rect(-3.2, 1.62, 6.3, 0.12).fill({ color: 0xfff6e2, alpha: 0.6 });
+    // Stripe along the side.
+    g.poly([-3.27, 0.1, 3.28, 0.1, 3.3, 0.28, -3.27, 0.28]).fill(PAL.stripe);
+    g.poly([-3.27, 0.3, 3.3, 0.3, 3.31, 0.36, -3.27, 0.36]).fill(PAL.stripeDark);
+    // Windows: the cab window shows the driver; the cabin window glows warmly.
+    g.roundRect(1.55, 0.5, 0.95, 1.0, 0.12).fill({ color: PAL.glass, alpha: 0.35 });
+    g.roundRect(1.55, 0.5, 0.95, 1.0, 0.12).stroke({ width: 0.06, color: PAL.bodyShade });
+    g.roundRect(-1.65, 0.55, 1.4, 0.8, 0.14).fill({ color: 0xf6c97a, alpha: 0.75 });
+    g.roundRect(-1.65, 0.55, 1.4, 0.8, 0.14).stroke({ width: 0.06, color: PAL.bodyShade });
+    g.rect(-0.97, 0.55, 0.04, 0.8).fill(PAL.bodyShade);
+    // Door at the rear with a handle and a little step.
+    g.roundRect(INTERIOR.doorX - 0.36, INTERIOR.floorY + 0.02, 0.72, 1.78, 0.1).stroke({ width: 0.05, color: PAL.bodyShade });
+    g.roundRect(INTERIOR.doorX - 0.24, 0.75, 0.48, 0.5, 0.08).fill({ color: PAL.glass, alpha: 0.4 });
+    g.circle(INTERIOR.doorX + 0.25, 0.45, 0.045).fill(0xb08a4a);
+    g.rect(INTERIOR.doorX - 0.3, -0.62, 0.6, 0.06).fill(0x5a5450);
+    // Vents and a sun sticker.
+    for (let k = 0; k < 3; k++) g.roundRect(0.35, 1.1 - k * 0.12, 0.5, 0.05, 0.02).fill({ color: PAL.bodyShade, alpha: 0.9 });
+    g.circle(0.6, 0.62, 0.17).fill(0xf2b84b);
+    for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; g.moveTo(0.6 + Math.cos(a) * 0.21, 0.62 + Math.sin(a) * 0.21).lineTo(0.6 + Math.cos(a) * 0.28, 0.62 + Math.sin(a) * 0.28); }
+    g.stroke({ width: 0.03, color: 0xf2b84b });
+    this.side.addChild(g);
+  }
+
+  // Fade the near wall in or out.
+  setCutaway(cut, dt) {
+    const target = cut ? 0 : 1;
+    this.sideAlpha += (target - this.sideAlpha) * Math.min(1, dt * 6);
+    this.side.alpha = this.sideAlpha;
+    this.side.visible = this.sideAlpha > 0.01;
   }
 
   // Lumber on the roof rack: board stacks at the back, logs at the front.

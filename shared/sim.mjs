@@ -2,7 +2,7 @@ import { World, Vec2, Edge, Circle, Polygon, Box, WheelJoint } from 'planck';
 import {
   CELL, CHUNK, GRAVITY, REACH, BRUSH_RADIUS, SOIL_CAPACITY, STRETCH_LENGTH, INTERIOR, STATION_RANGE, MAX_PLAYERS,
   TOOLS, BOARD_CARRY, RACK_BOARDS, RACK_LOGS, BOARD_MASS, LOG_DENSITY, RACK_POINT, RACK_RANGE, WORK_RANGE,
-  TOOL_SLOTS, START_TOOLS, START_TOOLBOX, TOOLBOX_SIZE, ITEM_RANGE, GIVE_RANGE, WINCH, TOOL_NAMES,
+  TOOL_SLOTS, START_TOOLS, START_TOOLBOX, TOOLBOX_SIZE, ITEM_RANGE, GIVE_RANGE, WINCH, TOOL_NAMES, STORAGE_RANGE,
 } from './constants.mjs';
 import { mulberry32 } from './rng.mjs';
 import { Terrain } from './terrain.mjs';
@@ -231,7 +231,10 @@ export class Sim {
       case 'pickup': this.#pickup(p, msg.id); break;
       case 'droptool': this.#dropTool(p); break;
       case 'give': this.#give(p); break;
-      case 'toolbox': this.#toolboxSwap(p, msg.kind); break;
+      case 'store': this.#store(p, msg.slot | 0); break;
+      case 'retrieve': this.#retrieve(p, msg.index | 0); break;
+      case 'stowBoards': if (this.nearCamper(p)) this.#stowBoards(p); break;
+      case 'takeBoards': if (this.nearCamper(p)) this.#takeBoards(p); break;
       case 'unseat': this.#unseat(p); break;
       case 'drive': {
         if (p.seat !== 'cab') break;
@@ -252,7 +255,12 @@ export class Sim {
       case 'build': this.#build(p, msg); break;
       case 'unbuild': this.#unbuild(p, msg); break;
       case 'salvage': this.#salvage(p, msg.id); break;
-      case 'weather': this.wet = msg.wet === true; break;   // temporary toggle until weather exists
+      case 'weather': {   // temporary toggle until weather exists
+        const wet = msg.wet === true;
+        if (wet && !this.wet) this.terrain.reactivateLoose();
+        this.wet = wet;
+        break;
+      }
       case 'dig':
       case 'fill': this.#tool(p, msg); break;
     }
@@ -617,19 +625,44 @@ export class Sim {
     this.#notice(q, `${p.name} handed you the ${TOOL_NAMES[kind].toLowerCase()}`);
   }
 
-  // At the toolbox: swap the tool in hand for one from the box (or just put it away).
-  #toolboxSwap(p, kind) {
-    if (p.avatar.mode !== 'in' || Math.abs(p.avatar.lx - INTERIOR.toolboxX) > STATION_RANGE + 0.2) return;
-    const held = this.toolOf(p);
-    const k = this.toolbox.indexOf(kind);
-    if (k >= 0) {
-      this.toolbox.splice(k, 1);
-      if (held) this.toolbox.push(held);
-      p.tools[p.tool] = kind;
-    } else if (held && this.toolbox.length < TOOLBOX_SIZE) {
-      this.toolbox.push(held);
-      p.tools[p.tool] = null;
-    }
+  // Camper storage: reachable from anywhere inside, or on foot near the camper.
+  nearCamper(p) {
+    if (p.avatar.mode === 'in') return true;
+    const c = this.camper.chassis.getPosition();
+    const along = Math.max(0, Math.abs(p.avatar.x - c.x) - 3.3);   // distance beyond the camper's ends
+    return (p.avatar.lane || 0) === 0 && along < STORAGE_RANGE && Math.abs(p.avatar.y + 0.8 - c.y) < 3;
+  }
+
+  #store(p, slot) {
+    const kind = p.tools[slot];
+    if (!kind || !this.nearCamper(p) || this.toolbox.length >= TOOLBOX_SIZE) return;
+    this.toolbox.push(kind);
+    p.tools[slot] = null;
+  }
+
+  // Take a tool from storage into a free slot, or swap it with the tool in hand.
+  #retrieve(p, index) {
+    const kind = this.toolbox[index];
+    if (!kind || !this.nearCamper(p)) return;
+    let slot = p.tools.indexOf(null);
+    this.toolbox.splice(index, 1);
+    if (slot < 0) { slot = p.tool; this.toolbox.push(p.tools[slot]); }
+    p.tools[slot] = kind;
+    p.tool = slot;
+  }
+
+  #stowBoards(p) {
+    const n = Math.min(p.boards, RACK_BOARDS - this.rack.boards);
+    if (n <= 0) return;
+    this.rack.boards += n; p.boards -= n;
+    this.#updateCargoMass();
+  }
+
+  #takeBoards(p) {
+    const n = Math.min(BOARD_CARRY - p.boards, this.rack.boards);
+    if (n <= 0) return;
+    this.rack.boards -= n; p.boards += n;
+    this.#updateCargoMass();
   }
 
   // ----- Winch -----
@@ -732,9 +765,10 @@ export class Sim {
     const upright = Math.cos(ang);
     // Tipped once it has lain over for a second; cleared only when nearly upright,
     // so pushing continues until the camper is back on its wheels.
+    // Back on its wheels counts as upright even when parked on a slope.
     if (upright < 0.15 && Math.abs(ch.getAngularVelocity()) < 1.5) this.tippedFor += dt;
     if (this.tippedFor > 1.0) this.tipped = true;
-    if (upright > 0.92) { this.tippedFor = 0; this.tipped = false; }
+    if (upright > 0.7) { this.tippedFor = 0; this.tipped = false; }
     let pushers = 0;
     const pos = ch.getPosition();
     for (const p of this.players.values()) {

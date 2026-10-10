@@ -8,7 +8,7 @@ import { mulberry32, fbm1, noise1 } from './rng.mjs';
 export const ISO = 127.5;
 const SOIL_BANDS = [0.4, 1.1, 1.9, 2.9];   // strata depth thresholds (metres)
 const LOOSEN_MARGIN = 0.8;                  // digging loosens soil this far beyond the brush
-const SLUMP_RATE_DRY = 8, SLUMP_RATE_WET = 40;   // density moved per pass
+const SLUMP_RATE_DRY = 10, SLUMP_RATE_WET = 30;   // density moved per pass
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -211,9 +211,15 @@ export class Terrain {
     }
   }
 
-  // One settling pass over active loose soil. Loose soil falls into space
-  // below it, then slides diagonally while steeper than its angle of repose
-  // (45° dry; about 27° wet, reaching two cells across). `blocked(ax, ay, bx, by)`
+  // Wake all loose soil (for example when rain starts) so it settles again.
+  reactivateLoose() {
+    const { loose, density } = this;
+    for (let i = 0; i < loose.length; i++) if (loose[i] && density[i] > 0) this.active.add(i);
+  }
+
+  // One settling pass over active loose soil. Unsupported loose soil always
+  // falls into space below it. In rain it also slides diagonally while steeper
+  // than its angle of repose (about 27°, reaching two cells across). `blocked(ax, ay, bx, by)`
   // vetoes moves that would pass through a board. Returns the changed nodes.
   slump(wet, blocked, budget = 6000) {
     const { nx, density: d, rock, loose } = this;
@@ -248,8 +254,8 @@ export class Terrain {
         move(i, below, Math.min(d[i], 255 - d[below], rate * 2));
         continue;
       }
-      // Slide, only from the exposed surface.
-      if (d[i + nx] > ISO) continue;
+      // Slide, only from the exposed surface, and only in rain: dry earthworks keep their shape.
+      if (!wet || d[i + nx] > ISO) continue;
       const first = (ix + this.slumpTick) & 1 ? 1 : -1;
       for (const s of [first, -first]) {
         const side = i + s;

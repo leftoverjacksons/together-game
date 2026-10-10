@@ -107,7 +107,7 @@ test('avatar walks on terrain and cannot leave the camper leash', () => {
   assert.ok(a.x <= 25 + 30 + 1e-9);
 });
 
-test('tool slots: drop, pick up, hand over, and swap at the toolbox', () => {
+test('tool slots: drop, pick up, hand over, and camper storage', () => {
   const sim = new Sim(77);
   const a = sim.addPlayer('a', 'A'), b = sim.addPlayer('b', 'B');
   assert.deepEqual(a.tools, ['shovel', 'axe', 'hammer']);
@@ -124,12 +124,18 @@ test('tool slots: drop, pick up, hand over, and swap at the toolbox', () => {
   assert.equal(a.tools[1], 'shovel');
   sim.handle('b', { t: 'pickup', id: dropped.id });
   assert.equal(b.tools[0], 'axe');
-  // Toolbox: inside, at the toolbox, swap the hammer for a saw.
-  Object.assign(a.avatar, { mode: 'in', lx: INTERIOR.toolboxX });
-  sim.handle('a', { t: 'tool', i: 2 });
-  sim.handle('a', { t: 'toolbox', kind: 'saw' });
-  assert.equal(a.tools[2], 'saw');
-  assert.ok(sim.toolbox.includes('hammer') && !sim.toolbox.includes('saw'));
+  // Camper storage: store everything, then take a saw back.
+  Object.assign(a.avatar, { mode: 'in', lx: 0 });
+  for (let k = 0; k < 3; k++) sim.handle('a', { t: 'store', slot: k });
+  assert.deepEqual(a.tools, [null, null, null]);
+  assert.ok(sim.toolbox.includes('hammer'));
+  sim.handle('a', { t: 'retrieve', index: sim.toolbox.indexOf('saw') });
+  assert.equal(a.tools[0], 'saw');
+  // Out of reach of the camper, storage is closed.
+  Object.assign(a.avatar, { mode: 'out', lane: 0, x: sim.camper.chassis.getPosition().x + 20 });
+  const n = sim.toolbox.length;
+  sim.handle('a', { t: 'store', slot: 0 });
+  assert.equal(sim.toolbox.length, n);
 });
 
 test('the right tool is needed: no chopping with a shovel, the pickaxe breaks rock', () => {

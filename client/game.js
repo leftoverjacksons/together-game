@@ -3,12 +3,13 @@ import { Terrain } from '../shared/terrain.mjs';
 import { newAvatar, stepAvatar, stepForest } from '../shared/character.mjs';
 import {
   INTERIOR, STATION_RANGE, DOOR_RANGE, REACH, BRUSH_RADIUS, SOIL_CAPACITY, SNAPSHOT_HZ, TOOLS, BOARD_CARRY,
-  TOOL_SLOTS, TOOL_NAMES, ITEM_RANGE, GIVE_RANGE, WINCH,
+  TOOL_SLOTS, TOOL_NAMES, ITEM_RANGE, GIVE_RANGE, WINCH, STORAGE_RANGE,
   RACK_POINT, RACK_RANGE, WORK_RANGE, CARRY_SPEED, RACK_BOARDS, RACK_LOGS,
 } from '../shared/constants.mjs';
 import { forestFloor, floorAt, generateTrees } from '../shared/forest.mjs';
 import { Input } from './input.js';
 import { loadArt } from './assets.js';
+import { InventoryPanel, makeToolIcons } from './inventory.js';
 import { Background, Foreground } from './render/background.js';
 import { TerrainView } from './render/terrainView.js';
 import { CamperView } from './render/camperView.js';
@@ -52,6 +53,14 @@ export class Game {
     container.appendChild(app.canvas);
     this.app = app;
     await loadArt();
+    const send = msg => this.session.send(msg);
+    this.inventory = new InventoryPanel(document.getElementById('inventory'), {
+      select: i => this.#selectTool(i), store: i => send({ t: 'store', slot: i }), retrieve: i => send({ t: 'retrieve', index: i }),
+      drop: i => { this.#selectTool(i); send({ t: 'tool', i }); send({ t: 'droptool' }); }, give: () => send({ t: 'give' }),
+      stowBoards: () => send({ t: 'stowBoards' }), takeBoards: () => send({ t: 'takeBoards' }), close: () => this.inventory.toggle(false),
+    });
+    this.toolIcons = await makeToolIcons(app.renderer);
+    this.inventory.icons = this.toolIcons;
     this.input = new Input(app.canvas);
     this.session.onmessage = m => this.onMessage(m);
     this.session.onstatus = (s, detail) => this.hud.status(s, detail);
@@ -200,6 +209,7 @@ export class Game {
     if (inp.wheel) { this.#selectTool((this.tool + Math.sign(inp.wheel) + TOOL_SLOTS) % TOOL_SLOTS); inp.wheel = 0; }
     this.myTool = this.#toolKind(latestMe);
     if (inp.hit('f') && this.myTool) this.session.send({ t: 'give' });
+    if (inp.hit('tab', 'i')) this.inventory.toggle();
     if (inp.hit('r')) this.session.send({ t: 'weather', wet: !latest.wet });
     if (inp.hit('m') && this.audio) this.hud.toast(this.audio.toggleMute() ? 'Sound off (M)' : 'Sound on (M)');
     const eHit = inp.hit('e');
@@ -268,12 +278,8 @@ export class Game {
           prompt = busy ? 'Your partner is on the winch' : '<b>E</b> work the winch';
           if (eHit && !busy) this.session.send({ t: 'seat', station: 'winch' });
         } else if (station === 'toolbox') {
-          const box = (latest.toolbox || []).filter(k => k !== this.myTool);
-          this.boxPick = ((this.boxPick || 0) + (inp.hit('q') ? 1 : 0)) % Math.max(1, box.length);
-          const next = box[this.boxPick];
-          const held = this.myTool ? TOOL_NAMES[this.myTool].toLowerCase() : null;
-          prompt = next ? `<b>E</b> ${held ? `swap the ${held} for` : 'take'} the ${TOOL_NAMES[next].toLowerCase()}${box.length > 1 ? ' · <b>Q</b> next tool' : ''}` : held ? `<b>E</b> put the ${held} in the toolbox` : 'The toolbox is empty';
-          if (eHit && (next || held)) this.session.send({ t: 'toolbox', kind: next || null });
+          prompt = '<b>E</b> open the camper storage (<b>Tab</b> anywhere inside)';
+          if (eHit) this.inventory.toggle(true);
         } else if (atSeat) {
           prompt = driver && driver !== this.myId ? 'Your partner is driving' : '<b>E</b> take the wheel';
           if (eHit && !driver) this.session.send({ t: 'seat' });
@@ -293,9 +299,19 @@ export class Game {
     }
 
     this.#render(dt, view, { working });
+    if (this.inventory.open) {
+      const partner = latest.players.find(p => p.id !== this.myId);
+      const pa = partner?.a;
+      const partnerNear = !!partner && partner.connected && pa.mode === me.mode && (me.mode === 'in' ? Math.abs(pa.lx - me.lx) < GIVE_RANGE : (pa.lane || 0) === (me.lane || 0) && Math.hypot(pa.x - me.x, pa.y - me.y) < GIVE_RANGE);
+      this.inventory.update({
+        tools: latestMe?.tools || [], selected: this.tool, storage: latest.toolbox || [], near: this.#nearCamper(c),
+        boards: latestMe?.boards || 0, boardCap: BOARD_CARRY, rack: { boards: latest.rack?.boards || 0, logs: latest.rack?.logs.length || 0 },
+        partner: partner ? { name: partner.name, tools: partner.tools || [], near: partnerNear } : null,
+      });
+    }
     this.hud.update({
       prompt, soil: (latestMe?.soil || 0) / SOIL_CAPACITY, tipped: view.tipped, mass: c.mass, players: latest.players, myId: this.myId,
-      tool: this.tool, tools: Array.from({ length: TOOL_SLOTS }, (_, k) => (latestMe?.tools?.[k] ? TOOL_NAMES[latestMe.tools[k]] : '—')), boards: latestMe?.boards || 0, boardCap: BOARD_CARRY,
+      tool: this.tool, tools: Array.from({ length: TOOL_SLOTS }, (_, k) => { const kind = latestMe?.tools?.[k]; return { name: kind ? TOOL_NAMES[kind] : 'Empty', icon: kind ? this.toolIcons?.[kind] : '' }; }), boards: latestMe?.boards || 0, boardCap: BOARD_CARRY,
       rack: latest.rack ? `${latest.rack.boards}/${RACK_BOARDS} boards · ${latest.rack.logs.length}/${RACK_LOGS} logs` : '',
       lane: me.mode === 'out' ? (me.lane === 1 ? 'Forest' : 'Road') : 'Camper', wet: latest.wet,
     });
@@ -306,8 +322,11 @@ export class Game {
   #context(view, latestMe, door, carried) {
     const me = this.me, c = view.camper, latest = view.latest;
     const lane = me.lane || 0;
-    if (lane === 0 && view.tipped && Math.hypot(me.x - c.x, me.y + 0.8 - c.y) < PUSH_RANGE) return { prompt: 'Hold <b>E</b> to push the camper upright', push: true };
     const send = msg => () => this.session.send(msg);
+    const board = () => { Object.assign(me, { mode: 'in', lx: INTERIOR.doorX + 0.35, vx: 0 }); };
+    // A tilted camper can still be boarded as long as it is more or less on its wheels.
+    if (lane === 0 && !carried && Math.cos(c.a) > 0.45 && Math.hypot(me.x - door.x, me.y - door.y) < DOOR_RANGE + 0.6) return { prompt: '<b>E</b> climb aboard', action: board };
+    if (lane === 0 && view.tipped && Math.hypot(me.x - c.x, me.y + 0.8 - c.y) < PUSH_RANGE) return { prompt: 'Hold <b>E</b> to push the camper upright', push: true };
     const thudSend = msg => () => { this.session.send(msg); this.audio?.thud(me.x); };
     if (carried) {
       if (lane === 0 && this.#atRack(c)) return { prompt: '<b>E</b> load the log onto the roof rack', action: send({ t: 'stow' }) };
@@ -372,6 +391,11 @@ export class Game {
     return false;
   }
 
+  #nearCamper(c) {
+    const me = this.me;
+    return me.mode === 'in' || ((me.lane || 0) === 0 && Math.max(0, Math.abs(me.x - c.x) - 3.3) < STORAGE_RANGE && Math.abs(me.y + 0.8 - c.y) < 3);
+  }
+
   #atRack(c) {
     const r = this.#camperPoint(c, RACK_POINT.x, RACK_POINT.y);
     return Math.hypot(this.me.x - r.x, this.me.y + 0.8 - r.y) < RACK_RANGE + 0.6;
@@ -415,7 +439,7 @@ export class Game {
     const tool = this.myTool;
     const lane = me.lane || 0;
     if (!tool) return { working: false };
-    if (latestMe?.carrying != null) return { working: false };
+    if (latestMe?.carrying != null || this.inventory.open) return { working: false };
     const every = TOOL_INTERVAL[tool] || 100;
     const ready = now - this.lastTool > every;
     if (tool === 'shovel' || tool === 'pickaxe') {
@@ -643,6 +667,12 @@ export class Game {
     this.forestView.update(this.cam.x - halfW, this.cam.x + halfW, treeState, view.tick, this.time);
     this.terrainView.update(this.cam.x - halfW, this.cam.x + halfW, this.cam.y - halfH, this.cam.y + halfH);
     this.camperView.update(c, this.time);
+    // Cut away the near wall while anyone is on foot inside; a lone driver sees it closed.
+    const onFootInside = view.players.some(p => {
+      const a = p.id === this.myId ? me : p.a;
+      return (p.connected || p.id === this.myId) && a.mode === 'in' && p.seat !== 'cab';
+    });
+    this.camperView.setCutaway(onFootInside, dt);
     if (view.latest.rack) this.camperView.setRack(view.latest.rack);
     const piles = view.latest.piles || [];
     this.forestLumber.update(view.logs.filter(l => l.lane === 1), piles.filter(p => p.lane === 1));
