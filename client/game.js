@@ -27,7 +27,8 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const lerpAngle = (a, b, t) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * t; };
 
 export class Game {
-  constructor(session, hud) {
+  constructor(session, hud, audio) {
+    this.audio = audio;
     this.session = session;
     this.hud = hud;
     this.snaps = [];
@@ -100,7 +101,7 @@ export class Game {
       }
       case 'terrain': this.terrain?.applyEdits(msg.i, msg.v); break;
       case 'notice': if (msg.to === this.myId) this.hud.toast(msg.msg); break;
-      case 'fx': this.onFx?.(msg); break;
+      case 'fx': if (msg.kind === 'snap') this.audio?.snap(this.cam.x); break;
       case 'snap': {
         this.#updateColliders(msg.structure);
         this.snaps.push({ time: performance.now(), s: msg });
@@ -181,6 +182,7 @@ export class Game {
     for (let k = 0; k < TOOLS.length; k++) if (inp.hit(String(k + 1))) this.#selectTool(k);
     if (inp.wheel) { this.#selectTool((this.tool + Math.sign(inp.wheel) + TOOLS.length) % TOOLS.length); inp.wheel = 0; }
     if (inp.hit('r')) this.session.send({ t: 'weather', wet: !latest.wet });
+    if (inp.hit('m') && this.audio) this.hud.toast(this.audio.toggleMute() ? 'Sound off (M)' : 'Sound on (M)');
     const eHit = inp.hit('e');
     const door = this.#camperPoint(c, INTERIOR.doorX, INTERIOR.floorY);
 
@@ -259,10 +261,11 @@ export class Game {
     const lane = me.lane || 0;
     if (lane === 0 && view.tipped && Math.hypot(me.x - c.x, me.y + 0.8 - c.y) < PUSH_RANGE) return { prompt: 'Hold <b>E</b> to push the camper upright', push: true };
     const send = msg => () => this.session.send(msg);
+    const thudSend = msg => () => { this.session.send(msg); this.audio?.thud(me.x); };
     if (carried) {
       if (lane === 0 && this.#atRack(c)) return { prompt: '<b>E</b> load the log onto the roof rack', action: send({ t: 'stow' }) };
       const alone = carried.c.length < 2;
-      return { prompt: `${alone ? 'Hauling alone (slow)' : 'Carrying together'} · <b>E</b> let go${lane === 1 && alone ? ' · <b>S</b> bring it to the road' : ''}`, action: send({ t: 'release' }) };
+      return { prompt: `${alone ? 'Hauling alone (slow)' : 'Carrying together'} · <b>E</b> let go${lane === 1 && alone ? ' · <b>S</b> bring it to the road' : ''}`, action: thudSend({ t: 'release' }) };
     }
     if (lane === 0 && Math.hypot(me.x - door.x, me.y - door.y) < DOOR_RANGE) return { prompt: '<b>E</b> climb aboard', action: () => { Object.assign(me, { mode: 'in', lx: INTERIOR.doorX + 0.35, vx: 0 }); } };
     if (lane === 0 && this.#atRack(c)) {
@@ -278,7 +281,7 @@ export class Game {
     const log = this.#nearestLog(view, lane);
     if (log) {
       const n = log.c.length;
-      if (n < 2) return { prompt: n ? '<b>E</b> grab the other end' : '<b>E</b> pick up the log', action: send({ t: 'grab', id: log.id }) };
+      if (n < 2) return { prompt: n ? '<b>E</b> grab the other end' : '<b>E</b> pick up the log', action: thudSend({ t: 'grab', id: log.id }) };
     }
     const pile = (latest.piles || []).find(p => p.lane === lane && Math.abs(p.x - me.x) < WORK_RANGE);
     if (pile && (latestMe?.boards || 0) < BOARD_CARRY) return { prompt: `<b>E</b> pick up boards (${pile.n} here)`, action: send({ t: 'take', id: pile.id }) };
@@ -336,7 +339,11 @@ export class Game {
       const p = this.#mouseWorld();
       if (Math.hypot(p.x - me.x, p.y - (me.y + 0.9)) > REACH) return { working: false };
       if (Math.abs(p.x - me.x) > 0.2) me.facing = p.x > me.x ? 1 : -1;
-      if (ready) { this.lastTool = now; this.session.send({ t: m.left ? 'dig' : 'fill', x: p.x, y: p.y }); }
+      if (ready) {
+        this.lastTool = now;
+        this.session.send({ t: m.left ? 'dig' : 'fill', x: p.x, y: p.y });
+        if ((this.toolSounds = (this.toolSounds || 0) + 1) % 3 === 0) m.left ? this.audio?.dig(p.x) : this.audio?.fill(p.x);
+      }
       return { working: true };
     }
     if (tool === 'axe') {
@@ -344,7 +351,7 @@ export class Game {
       if (!tree) return { working: false, hint: lane === 0 ? '<b>W</b> step into the forest to fell trees' : '' };
       if (!m.left) return { working: false, hint: 'Hold <b>left mouse</b> to chop · faster together' };
       me.facing = tree.x > me.x ? 1 : -1;
-      if (ready) { this.lastTool = now; this.session.send({ t: 'chop' }); }
+      if (ready) { this.lastTool = now; this.session.send({ t: 'chop' }); this.audio?.chop(tree.x); }
       return { working: true };
     }
     if (tool === 'saw') {
@@ -352,7 +359,7 @@ export class Game {
       if (!log) return { working: false };
       if (!m.left) return { working: false, hint: 'Hold <b>left mouse</b> to saw the log into boards' };
       me.facing = log.x > me.x ? 1 : -1;
-      if (ready) { this.lastTool = now; this.session.send({ t: 'saw' }); }
+      if (ready) { this.lastTool = now; this.session.send({ t: 'saw' }); if ((this.toolSounds = (this.toolSounds || 0) + 1) % 2 === 0) this.audio?.saw(log.x); }
       return { working: true };
     }
     return this.#hammer(now, view, latestMe);
@@ -402,6 +409,42 @@ export class Game {
     this.structureView.drawGhost(null);
     if (now - this.lastTool < 400) return { working: true };
     return { working: false, hint: `Drag with <b>left mouse</b> to place a board (${boards} carried) · <b>right-click</b> removes one` };
+  }
+
+  // Sounds driven by shared state: partner's tools, falling trees, new boards,
+  // footsteps, stressed boards, engine and weather.
+  #sounds(view) {
+    const A = this.audio;
+    if (!A?.ctx) return;
+    const latest = view.latest, now = this.time;
+    A.listenerX = this.cam.x;
+    A.setEngine(!!view.driver, Math.abs(latest.c.th || 0), view.camper.vx, view.camper.x);
+    A.setRain(!!latest.wet);
+    A.tick(!!latest.wet);
+    this.sfx = this.sfx || { fallen: null, boards: null, steps: new Map(), partner: new Map(), creak: 0 };
+    const S = this.sfx;
+    const fallen = new Set((latest.trees || []).filter(t => t[1] <= 0).map(t => t[0]));
+    if (S.fallen) for (const id of fallen) if (!S.fallen.has(id)) { const tr = this.trees.find(t => t.id === id); if (tr) A.fell(tr.x); }
+    S.fallen = fallen;
+    const ids = new Set((latest.structure?.b || []).map(b => b[0]));
+    if (S.boards) for (const b of latest.structure.b) if (!S.boards.has(b[0])) { const j = latest.structure.j.find(q => q[0] === b[2]); A.hammer(j ? j[1] : this.cam.x); }
+    S.boards = ids;
+    if (latest.structure?.b.some(b => b[3] > 0.85) && now - S.creak > 0.7) { S.creak = now; A.creak(this.cam.x); }
+    for (const p of view.players) {
+      const a = p.id === this.myId ? this.me : p.a;
+      if (a.mode === 'out' && a.onGround) {
+        const k = Math.floor(a.walkPhase || 0);
+        if (S.steps.has(p.id) && S.steps.get(p.id) !== k) A.step(a.x, a.lane === 1);
+        S.steps.set(p.id, k);
+      }
+      if (p.id === this.myId || !p.a.working || p.a.mode !== 'out') continue;
+      const tool = TOOLS[p.tool], last = S.partner.get(p.id) || 0;
+      const every = { shovel: 0.25, axe: 0.3, saw: 0.2 }[tool];
+      if (every && now - last > every) {
+        S.partner.set(p.id, now);
+        if (tool === 'shovel') A.dig(p.a.x); else if (tool === 'axe') A.chop(p.a.x); else A.saw(p.a.x);
+      }
+    }
   }
 
   #render(dt, view, { working }) {
@@ -470,7 +513,7 @@ export class Game {
       this.cursor.circle(p.x, p.y, BRUSH_RADIUS).stroke({ width: 0.05, color: ok ? 0xfff3d6 : 0xd06a50, alpha: ok ? 0.85 : 0.5 });
       if (!ok) this.cursor.circle(me.x, me.y + 0.9, REACH).stroke({ width: 0.03, color: 0xfff3d6, alpha: 0.18 });
     }
-    this.drawExtras?.(view);
+    this.#sounds(view);
     this.ambience.update(dt, this.time, w, h, this.cam.x, x => this.terrain.groundY(x, this.cam.y + halfH));
   }
 }

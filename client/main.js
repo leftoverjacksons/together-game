@@ -1,5 +1,9 @@
 import { Game } from './game.js';
 import { OnlineSession, LocalSession } from './session.js';
+import { Audio } from './audio.js';
+
+const audio = new Audio();
+addEventListener('pointerdown', () => { if (audio.ctx?.state === 'suspended') audio.ctx.resume(); });
 
 const $ = id => document.getElementById(id);
 const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
@@ -51,13 +55,15 @@ const escape = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&l
 
 let game = null;
 function launch(session) {
+  audio.start();
   if (game) { game.session.close(); game.session = session; session.onmessage = m => game.onMessage(m); session.onstatus = (s, d) => hud.status(s, d); session.connect(); return; }
-  game = new Game(session, hud);
+  game = new Game(session, hud, audio);
   window.__together = game;   // debugging handle
   game.start($('stage'));
 }
 
 $('create').onclick = async () => {
+  audio.start();
   fail('');
   try {
     const r = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
@@ -67,12 +73,13 @@ $('create').onclick = async () => {
   } catch { fail('Could not reach the server.'); }
 };
 $('join').onclick = () => {
+  audio.start();
   fail('');
   const code = $('code').value.trim().toUpperCase();
   if (!/^[0-9A-F]{6}$/.test(code)) return fail('Trip codes are six letters and numbers.');
   launch(new OnlineSession(code, name()));
 };
-$('practice').onclick = () => { fail(''); launch(new LocalSession(name())); };
+$('practice').onclick = () => { audio.start(); fail(''); launch(new LocalSession(name())); };
 $('copy').onclick = async () => {
   const link = location.origin + '/?trip=' + $('trip-code').textContent;
   try { await navigator.clipboard.writeText(link); $('copy').textContent = 'Copied'; } catch { prompt('Invite link', link); }
