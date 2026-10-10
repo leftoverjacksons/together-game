@@ -2,6 +2,7 @@ import { Container, Graphics } from 'pixi.js';
 import { CAMPER } from '../../shared/sim.mjs';
 import { INTERIOR } from '../../shared/constants.mjs';
 import { PAL } from './palette.js';
+import { artSprite } from '../assets.js';
 
 // The camper as a dollhouse cross-section: the near wall is cut away so the
 // interior and both travellers stay visible while driving.
@@ -11,9 +12,9 @@ export class CamperView {
     this.arms = new Graphics();
     this.wheels = CAMPER.wheelX.map(() => this.#wheel());
     this.body = new Container();
-    this.back = new Graphics();      // interior back wall and furniture
+    this.back = new Container();     // interior back wall and furniture
     this.interior = new Container(); // travellers inside are added here
-    this.front = new Graphics();     // frame, roof, bumper drawn over travellers
+    this.front = new Container();    // frame, roof, bumper drawn over travellers
     this.glow = new Graphics();
     this.rack = new Graphics();
     this.body.addChild(this.back, this.interior, this.front, this.rack, this.glow);
@@ -25,6 +26,8 @@ export class CamperView {
 
   #wheel() {
     const c = new Container();
+    const art = artSprite('camper.wheel');
+    if (art) { c.addChild(art); return c; }
     const g = new Graphics();
     const R = CAMPER.wheelR;
     for (let k = 0; k < 14; k++) {
@@ -47,7 +50,13 @@ export class CamperView {
   }
 
   #drawBody() {
-    const b = this.back, f = this.front;
+    // Art slots camper.back / camper.front replace the drawn versions when present.
+    const backArt = artSprite('camper.back'), frontArt = artSprite('camper.front');
+    if (backArt) this.back.addChild(backArt);
+    if (frontArt) this.front.addChild(frontArt);
+    const b = new Graphics(), f = new Graphics();
+    if (!backArt) this.back.addChild(b);
+    if (!frontArt) this.front.addChild(f);
     const floor = INTERIOR.floorY;
     // Interior back wall (warm wood) inside the hull.
     b.poly([-2.85, -0.5, 2.6, -0.5, 3.2, 0.22, 2.95, 1.7, -3.05, 1.7, -3.15, -0.05]).fill(PAL.wood);

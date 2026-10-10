@@ -3,10 +3,13 @@ import { CELL } from '../../shared/constants.mjs';
 import { mulberry32 } from '../../shared/rng.mjs';
 import { floorAt, LOG_THICKNESS } from '../../shared/forest.mjs';
 import { PAL } from './palette.js';
+import { artSprite } from '../assets.js';
 
 const FALL_TIME = 1.3;   // seconds for a felled tree to topple
 
 function treeGraphic(tree) {
+  const art = artSprite('tree.' + tree.kind, tree.seed, { height: tree.height });
+  if (art) { const c = new Container(); c.addChild(art); return c; }
   const rand = mulberry32(tree.seed);
   const g = new Graphics();
   const h = tree.height, w = tree.girth;
@@ -41,6 +44,8 @@ function treeGraphic(tree) {
 }
 
 function stumpGraphic(tree) {
+  const art = artSprite('tree.stump', tree.seed);
+  if (art) { const c = new Container(); c.addChild(art); return c; }
   const w = tree.girth;
   return new Graphics()
     .poly([-w * 1.4, 0, w * 1.4, 0, w, 0.45, -w, 0.45]).fill(PAL.trunk)
@@ -49,6 +54,8 @@ function stumpGraphic(tree) {
 }
 
 export function logGraphic(len) {
+  const art = artSprite('log', 0, { length: len });
+  if (art) { const c = new Container(); c.addChild(art); return c; }
   const t = LOG_THICKNESS, h = len / 2;
   const g = new Graphics();
   g.roundRect(-h, -t / 2, len, t, t * 0.45).fill(0x7a5236);

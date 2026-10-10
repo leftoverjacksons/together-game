@@ -7,6 +7,7 @@ import {
 } from '../shared/constants.mjs';
 import { forestFloor, floorAt, generateTrees } from '../shared/forest.mjs';
 import { Input } from './input.js';
+import { loadArt } from './assets.js';
 import { Background, Foreground } from './render/background.js';
 import { TerrainView } from './render/terrainView.js';
 import { CamperView } from './render/camperView.js';
@@ -49,6 +50,7 @@ export class Game {
     await app.init({ resizeTo: window, antialias: true, background: PAL.skyLow, autoDensity: true, resolution: Math.min(2, devicePixelRatio || 1) });
     container.appendChild(app.canvas);
     this.app = app;
+    await loadArt();
     this.input = new Input(app.canvas);
     this.session.onmessage = m => this.onMessage(m);
     this.session.onstatus = (s, detail) => this.hud.status(s, detail);

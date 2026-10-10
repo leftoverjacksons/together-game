@@ -3,6 +3,7 @@
 Two-player co-op in the browser: drive a big off-road camper through procedural wilderness, reshape the ground to get it through, and (soon) rescue animals along the way.
 
 The design lives in [`docs/DESIGN.md`](docs/DESIGN.md). Update it when decisions change.
+Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md): drop images into `public/assets/` and list them in `manifest.json` to replace the code-drawn placeholders.
 
 ## Status: milestone 2 (timber and building)
 
@@ -79,7 +80,7 @@ shared/     simulation shared by server and browser
   character.mjs   on-foot movement (road and forest lanes)
 server/     HTTP + WebSocket server, rooms, fixed-rate loop
 client/     browser game: sessions (online/offline), input, PixiJS renderer
-public/     index.html and styles
+public/     index.html, styles, assets/ (art slots: manifest.json + images)
 test/       node --test suites
 docs/       design document
 ```

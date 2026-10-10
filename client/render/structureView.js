@@ -1,5 +1,6 @@
 import { Container, Graphics } from 'pixi.js';
 import { PAL } from './palette.js';
+import { artSprite, hasArt } from '../assets.js';
 
 const THICK = 0.12;
 
@@ -25,7 +26,8 @@ export class StructureView {
     this.shaky = new Graphics();
     this.debris = new Graphics();
     this.ghost = new Graphics();
-    this.root.addChild(this.debris, this.boards, this.shaky, this.ghost);
+    this.boardArt = new Container();   // sprites when a 'board' art slot exists
+    this.root.addChild(this.debris, this.boardArt, this.boards, this.shaky, this.ghost);
     parent.addChild(this.root);
     this.key = '';
   }
@@ -38,10 +40,19 @@ export class StructureView {
     if (key !== this.key) {
       this.key = key;
       const g = this.boards.clear();
-      for (const [, a, b, u, unstable] of st.b) {
+      for (const c of this.boardArt.removeChildren()) c.destroy();
+      const useArt = hasArt('board');
+      for (const [id, a, b, u, unstable] of st.b) {
         if (unstable) continue;
         const A = joints.get(a), B = joints.get(b);
-        plank(g, A[1], A[2], B[1], B[2], showStress ? stressTint(u) : undefined);
+        if (useArt) {
+          const len = Math.hypot(B[1] - A[1], B[2] - A[2]);
+          const sp = artSprite('board', id, { length: len });
+          sp.position.set((A[1] + B[1]) / 2, (A[2] + B[2]) / 2);
+          sp.rotation = Math.atan2(B[2] - A[2], B[1] - A[1]);
+          if (showStress) sp.tint = stressTint(u);
+          this.boardArt.addChild(sp);
+        } else plank(g, A[1], A[2], B[1], B[2], showStress ? stressTint(u) : undefined);
       }
       for (const [, x, y, anchor] of st.j) {
         if (anchor) g.poly([x - 0.05, y + 0.02, x + 0.05, y + 0.02, x, y - 0.32]).fill(0x6e5038);   // stake

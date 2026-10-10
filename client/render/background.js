@@ -1,6 +1,7 @@
 import { Container, Graphics, FillGradient } from 'pixi.js';
 import { mulberry32, fbm1 } from '../../shared/rng.mjs';
 import { PAL } from './palette.js';
+import { artStrip } from '../assets.js';
 
 // Sky, sun and parallax silhouette layers. Each layer is a long strip drawn
 // once in its own metres; the camera moves it by its depth factor.
@@ -96,7 +97,9 @@ export class Background {
           tree(g, x, pts[ix * 2 + 1] - 0.4, 0.6 + rand() * 0.7, rand, L.treeColor);
         }
       }
-      c.addChild(g);
+      // Art slot bg.<layer> (a horizontally repeating strip) replaces the drawn layer.
+      const strip = artStrip('bg.' + L.key, span + 200);
+      if (strip) { strip.position.x = -200; c.addChild(strip); g.destroy(); } else c.addChild(g);
       this.root.addChild(c);
       // Atmospheric haze in front of each distant layer.
       const haze = new Graphics();

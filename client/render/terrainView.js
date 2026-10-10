@@ -2,6 +2,7 @@ import { Container, Graphics } from 'pixi.js';
 import { CELL, CHUNK } from '../../shared/constants.mjs';
 import { hash1, noise1 } from '../../shared/rng.mjs';
 import { PAL } from './palette.js';
+import { artSprite } from '../assets.js';
 
 const BANDS = [0.4, 1.1, 1.9, 2.9];   // strata depth below the original surface
 
@@ -33,15 +34,16 @@ export class TerrainView {
       const id = cy * t.chunksX + cx;
       visible.add(id);
       const c = this.chunks.get(id);
-      if (c && c.version === t.chunkVersion[id]) { c.shape.visible = c.rim.visible = true; continue; }
+      if (c && c.version === t.chunkVersion[id]) { c.shape.visible = c.rim.visible = true; if (c.props) c.props.visible = true; continue; }
       if (budget-- <= 0) { if (c) c.shape.visible = c.rim.visible = true; continue; }
       this.#build(id, cx, cy, c);
     }
     for (const [id, c] of this.chunks) {
       if (visible.has(id)) continue;
       c.shape.visible = c.rim.visible = false;
+      if (c.props) c.props.visible = false;
       const cx = id % t.chunksX;
-      if (cx < cx0 - 8 || cx > cx1 + 8) { c.shape.destroy(); c.rim.destroy(); this.chunks.delete(id); }
+      if (cx < cx0 - 8 || cx > cx1 + 8) { c.shape.destroy(); c.rim.destroy(); c.props?.destroy({ children: true }); this.chunks.delete(id); }
     }
     for (const [cx, g] of this.columns) {
       g.visible = cx >= cx0 && cx <= cx1;
@@ -98,6 +100,8 @@ export class TerrainView {
     const shape = existing ? existing.shape.clear() : new Graphics();
     const rim = existing ? existing.rim.clear() : new Graphics();
     if (!existing) { this.shape.addChild(shape); this.grass.addChild(rim); }
+    if (existing?.props) existing.props.destroy({ children: true });
+    let props = null;
     const { fills, segments } = t.extractChunk(cx, cy);
     for (const polys of fills.values()) for (const p of polys) shape.poly(p);
     shape.fill(0xffffff);
@@ -134,6 +138,14 @@ export class TerrainView {
       const h = hash1(Math.round(ax * 53) + 7, t.seed);
       if (h > 0.16) continue;
       const kind = Math.floor(hash1(Math.round(ax * 31), t.seed + 3) * 5);
+      const slot = kind <= 1 ? 'prop.flower' : kind === 2 ? 'prop.mushroom' : kind === 3 ? 'prop.rock' : null;
+      const sp = slot && artSprite(slot, Math.round(ax * 7));
+      if (sp) {
+        if (!props) { props = new Container(); this.grass.addChild(props); }
+        sp.position.set(ax + (sp.x || 0), ay + (sp.y || 0));
+        props.addChild(sp);
+        continue;
+      }
       if (kind <= 1) {
         const tall = 0.22 + h * 1.2, col = [0xf2d15c, 0xf4f0e6, 0xd97a9a, 0xb49be0][Math.floor(h * 25) % 4];
         rim.moveTo(ax, ay).lineTo(ax + 0.03, ay + tall).stroke({ width: 0.025, color: PAL.grassDark });
@@ -149,6 +161,6 @@ export class TerrainView {
         rim.ellipse(ax - 0.03, ay + 0.05, 0.06, 0.03).fill({ color: 0xffffff, alpha: 0.18 });
       }
     }
-    this.chunks.set(id, { shape, rim, version: t.chunkVersion[id] });
+    this.chunks.set(id, { shape, rim, props, version: t.chunkVersion[id] });
   }
 }

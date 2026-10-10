@@ -68,6 +68,12 @@ test('unknown trip codes are rejected and static files are served', async () => 
     const html = await fetch(`http://localhost:${port}/`).then(r => r.text());
     assert.match(html, /<title>Together<\/title>/);
     assert.equal((await fetch(`http://localhost:${port}/../package.json`)).status, 404);
+    const manifest = await fetch(`http://localhost:${port}/assets/manifest.json`);
+    assert.equal(manifest.status, 200);
+    assert.ok((await manifest.json()).slots);
+    assert.equal((await fetch(`http://localhost:${port}/assets/..%2Fpackage.json`)).status, 404);
+    assert.equal((await fetch(`http://localhost:${port}/assets/nothing.png`)).status, 404);
+    assert.equal((await fetch(`http://localhost:${port}/assets/server.mjs`)).status, 404);
     c.ws.close();
   } finally {
     server.close();

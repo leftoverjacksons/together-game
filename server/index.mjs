@@ -9,7 +9,8 @@ import { Sim } from '../shared/sim.mjs';
 import { TICK_HZ, SNAPSHOT_HZ, MAX_PLAYERS } from '../shared/constants.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.map': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.map': 'application/json', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.ico': 'image/x-icon' };
+const ASSET_FILE = /^\/assets\/[\w-]+(\/[\w-]+)*\.(png|webp|jpg|svg|json)$/;
 const STATIC = { '/': 'public/index.html', '/style.css': 'public/style.css', '/game.js': 'dist/game.js', '/game.js.map': 'dist/game.js.map' };
 const MAX_ROOMS = 100;
 const ROOM_IDLE_MS = 2 * 60 * 60 * 1000;
@@ -57,13 +58,13 @@ export function createGameServer() {
         return room ? json(res, 200, { players: room.sessions.length }) : json(res, 404, { error: 'No trip with that code.' });
       }
       if (req.method === 'GET' || req.method === 'HEAD') {
-        const file = STATIC[url.pathname];
+        const file = STATIC[url.pathname] || (ASSET_FILE.test(url.pathname) && !url.pathname.includes('..') ? 'public' + url.pathname : null);
         if (file) {
           const path = normalize(join(ROOT, file));
           let entry = fileCache.get(path);
           if (!entry) { const data = await readFile(path); entry = { data, gz: gzipSync(data) }; if (process.env.NODE_ENV === 'production') fileCache.set(path, entry); }
           const gz = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
-          res.writeHead(200, { 'Content-Type': MIME[extname(path)] || 'application/octet-stream', 'Cache-Control': url.pathname === '/' ? 'no-cache' : 'public, max-age=300', 'Vary': 'Accept-Encoding', ...(gz ? { 'Content-Encoding': 'gzip' } : {}) });
+          res.writeHead(200, { 'Content-Type': MIME[extname(path)] || 'application/octet-stream', 'Cache-Control': url.pathname === '/' || url.pathname.endsWith('.json') ? 'no-cache' : 'public, max-age=300', 'Vary': 'Accept-Encoding', ...(gz ? { 'Content-Encoding': 'gzip' } : {}) });
           return res.end(req.method === 'HEAD' ? undefined : gz ? entry.gz : entry.data);
         }
       }

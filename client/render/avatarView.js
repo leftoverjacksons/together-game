@@ -1,5 +1,6 @@
 import { Container, Graphics } from 'pixi.js';
 import { PAL } from './palette.js';
+import { artSprite } from '../assets.js';
 
 // A rounded little traveller drawn in metres, feet at the origin, facing +x.
 export class AvatarView {
@@ -8,11 +9,19 @@ export class AvatarView {
     this.root = new Container();
     this.flip = new Container();
     this.root.addChild(this.flip);
-    const limb = (color, w, len) => { const c = new Container(); c.addChild(new Graphics().roundRect(-w / 2, -len, w, len, w / 2).fill(color)); return c; };
-    this.legB = limb(darken(col.pants), 0.15, 0.55); this.legB.position.set(-0.02, 0.58);
-    this.legF = limb(col.pants, 0.15, 0.55); this.legF.position.set(0.04, 0.58);
-    this.armB = limb(darken(col.shirt), 0.12, 0.48); this.armB.position.set(-0.04, 1.08);
-    this.armF = limb(col.shirt, 0.12, 0.48); this.armF.position.set(0.06, 1.08);
+    // Art slots traveller<N>.leg / .arm / .torso / .head replace the drawn parts.
+    // Limbs pivot at the hip or shoulder and hang down; the back limb is shaded.
+    const part = key => artSprite(`traveller${colorIndex % 2}.${key}`);
+    const limb = (key, color, w, len, back) => {
+      const c = new Container();
+      const art = part(key);
+      if (art) { if (back) art.tint = 0xc8c8c8; c.addChild(art); } else c.addChild(new Graphics().roundRect(-w / 2, -len, w, len, w / 2).fill(color));
+      return c;
+    };
+    this.legB = limb('leg', darken(col.pants), 0.15, 0.55, true); this.legB.position.set(-0.02, 0.58);
+    this.legF = limb('leg', col.pants, 0.15, 0.55); this.legF.position.set(0.04, 0.58);
+    this.armB = limb('arm', darken(col.shirt), 0.12, 0.48, true); this.armB.position.set(-0.04, 1.08);
+    this.armF = limb('arm', col.shirt, 0.12, 0.48); this.armF.position.set(0.06, 1.08);
     // Hand tools, held at the end of the front arm; one visible at a time.
     const handle = 0x8a6440, steel = 0x9aa3a8;
     const shovel = new Graphics()
@@ -32,19 +41,26 @@ export class AvatarView {
     this.tools = { shovel, axe, saw, hammer };
     for (const g of Object.values(this.tools)) { g.position.set(0, -0.44); this.armF.addChild(g); }
     this.shovel = shovel;
-    const body = new Graphics();
-    body.roundRect(-0.36, 0.62, 0.26, 0.46, 0.08).fill(col.pack);            // backpack
-    body.roundRect(-0.36, 0.95, 0.26, 0.08, 0.03).fill(darken(col.pack));
-    body.roundRect(-0.21, 0.52, 0.44, 0.62, 0.17).fill(col.shirt);           // torso
-    body.roundRect(-0.21, 0.52, 0.44, 0.12, 0.05).fill(darken(col.shirt));   // belt
-    const head = new Graphics();
-    head.circle(0.02, 1.36, 0.23).fill(PAL.skin);
-    head.circle(0.17, 1.38, 0.035).fill(0x2d2420);                            // eye
-    head.ellipse(0.19, 1.27, 0.05, 0.025).fill({ color: 0xd98c78, alpha: 0.6 }); // cheek
-    head.roundRect(-0.23, 1.42, 0.5, 0.2, 0.1).fill(col.hat);                 // beanie
-    head.rect(-0.23, 1.42, 0.5, 0.06).fill(darken(col.hat));
-    head.circle(-0.05, 1.66, 0.06).fill(col.hat);
-    head.circle(0.2, 1.47, 0.05).fill(0xfff2c4);                              // headlamp
+    const torsoArt = part('torso'), headArt = part('head');
+    const body = new Container();
+    if (torsoArt) body.addChild(torsoArt);
+    const bodyG = new Graphics();
+    if (!torsoArt) body.addChild(bodyG);
+    bodyG.roundRect(-0.36, 0.62, 0.26, 0.46, 0.08).fill(col.pack);            // backpack
+    bodyG.roundRect(-0.36, 0.95, 0.26, 0.08, 0.03).fill(darken(col.pack));
+    bodyG.roundRect(-0.21, 0.52, 0.44, 0.62, 0.17).fill(col.shirt);           // torso
+    bodyG.roundRect(-0.21, 0.52, 0.44, 0.12, 0.05).fill(darken(col.shirt));   // belt
+    const head = new Container();
+    if (headArt) head.addChild(headArt);
+    const headG = new Graphics();
+    if (!headArt) head.addChild(headG);
+    headG.circle(0.02, 1.36, 0.23).fill(PAL.skin);
+    headG.circle(0.17, 1.38, 0.035).fill(0x2d2420);                            // eye
+    headG.ellipse(0.19, 1.27, 0.05, 0.025).fill({ color: 0xd98c78, alpha: 0.6 }); // cheek
+    headG.roundRect(-0.23, 1.42, 0.5, 0.2, 0.1).fill(col.hat);                 // beanie
+    headG.rect(-0.23, 1.42, 0.5, 0.06).fill(darken(col.hat));
+    headG.circle(-0.05, 1.66, 0.06).fill(col.hat);
+    headG.circle(0.2, 1.47, 0.05).fill(0xfff2c4);                              // headlamp
     this.head = head;
     this.boardsOnBack = new Graphics();
     this.flip.addChild(this.boardsOnBack, this.legB, this.armB, body, this.legF, head, this.armF);

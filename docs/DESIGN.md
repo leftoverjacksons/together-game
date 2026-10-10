@@ -182,7 +182,10 @@ Design pillars:
   - Foreground: rounded vector shapes with soft rim lighting and contact shadows.
   - Lighting: a global colour grade driven by time of day. Golden hour by default. At night, cool blue, contrasted with the camper's warm lantern light.
   - Life: fireflies, pollen, birds, butterflies, swaying grass, small ambient animals.
-- **[OPEN]** Asset production: shapes drawn in code, hand-authored SVG, or a mix.
+- **[DECIDED 2026-10-10] Asset-driven renderer.** Every visual has a named art slot. When an image file exists for a slot, it is used; otherwise the code-drawn version is drawn. This lets hand-made or generated art replace placeholders one piece at a time, in any engine. See `docs/ART.md` for the style brief, file specs and slot list.
+- **[OPEN]** Asset source: hand-made, AI-generated with hand clean-up, or a mix. The first step is an **art test**: one camper, one tree and one traveller, generated against the brief, then integrated and judged in play.
+  - Generated art is easiest for backgrounds, trees and props, and hardest for animated characters (consistency between frames, limbs split into parts).
+  - If the game is ever sold on Steam, AI-generated content must be disclosed on the store page. Each generator's terms of use also apply.
 
 ---
 
@@ -216,6 +219,15 @@ Design pillars:
   - Strata and bedrock are drawn as smooth bands following the generated surface, clipped by the terrain mask.
 - **Local mode:** the same `Sim` runs in the page (`LocalSession`). This is how offline practice works now, and the path for local co-op later.
 - Reused from the original prototype: `render.yaml`, the `/health` check, the Dockerfile, room codes, invite links, session tokens.
+
+### Engine checkpoint **[DECIDED 2026-10-10]**
+- We stay on the web stack (PixiJS + planck.js + Node) for now. The goal is maximum polish.
+- **Checkpoint after M4 (animals)**, once the core loop is known to be fun: decide whether to move to Godot. Reasons that would favour moving:
+  1. The target becomes Steam or a desktop download (native builds, the GodotSteam plugin for playing with friends, Remote Play Together for local co-op over the internet).
+  2. The art and animation are made hands-on in an editor (skeletal animation, scene layout, particle tuning).
+  3. Night lighting or performance hits a wall in the browser.
+- Reasons to stay: a browser link that works with nothing to install; online play shares one simulation between server and browser; the build-and-test loop is fast and automated.
+- To keep a move cheap: game rules stay engine-independent in `shared/`, and art is data (image files plus a manifest) rather than code.
 
 - **Structures (M2):** `shared/structure.mjs`.
   - Boards are static planck bodies.
@@ -281,4 +293,5 @@ Design pillars:
 | 2026-10-10 | Small animals are the score; large animals help (birds of prey lift, deer pull, moose and bear push). Rescue means getting out to help the animal. |
 | 2026-10-10 | Stiffer suspension and better approach angle. Disturbed soil slumps; rain speeds it up; boards stop it. |
 | 2026-10-10 | Synthesised sound effects. Log hauling: slow alone, faster with two. |
+| 2026-10-10 | Stay on the web stack; engine checkpoint (Godot?) after M4. Renderer becomes asset-driven; art test with generated art. |
 | 2026-10-10 | Pressure sources: storms (slick ground, slumping earthworks) and night (headlamps and headlights only). |
