@@ -5,7 +5,7 @@ Two-player co-op in the browser: drive a big off-road camper through procedural 
 The design lives in [`docs/DESIGN.md`](docs/DESIGN.md). Update it when decisions change.
 Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md): drop images into `public/assets/` and list them in `manifest.json` to replace the code-drawn placeholders.
 
-## Status: milestone 2 (timber and building)
+## Status: milestone 3 (timber, building, winch and tools)
 
 - **Terrain:**
   - A procedural stretch with set pieces: ravines, hills, ledges, rock boulders, dips.
@@ -25,7 +25,6 @@ Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md):
 - **Sound:** synthesised effects, an engine, wind, rain and birdsong.
 - **Look:** layered painted-vector scenery (snowy peaks, haze, clouds, light shafts, deer, flowers) and particles.
 - **Modes:** online play for two, plus offline practice.
-
 - **Winch and tools (M3):**
   - A winch station inside the camper; a lone driver can winch from the wheel.
   - The hook goes from the front bumper to a tree, stump or rock.
