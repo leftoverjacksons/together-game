@@ -1,6 +1,6 @@
 # Together
 
-Two-player co-op in the browser: drive a big off-road camper through procedural wilderness, reshape the ground to get it through, and (soon) rescue animals along the way.
+Two-player co-op in the browser: drive a big off-road camper through procedural wilderness, reshape the ground to get it through, and rescue animals along the way.
 
 The design lives in [`docs/DESIGN.md`](docs/DESIGN.md). Update it when decisions change.
 Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md): drop images into `public/assets/` and list them in `manifest.json` to replace the code-drawn placeholders.
@@ -31,7 +31,6 @@ Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md):
   - Three tool slots each; drop, pick up and hand over tools.
   - Inventory panel (Tab): your pack, 12 tiles of camper storage, the roof rack, your partner's pack.
   - Finds: a pickaxe (breaks rock) and a jack (one person pushes like three).
-
 - **Animals (M4):**
   - A dog near the start becomes your companion and sniffs out animals in trouble.
   - Rabbits, chipmunks, songbirds and foxes need rescuing (dig, saw, untangle, unsnare) and then ride in the camper.
