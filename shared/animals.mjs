@@ -10,7 +10,7 @@ import { mulberry32 } from './rng.mjs';
 // alongside and help when the camper struggles. The dog is a companion.
 
 export const ANIMALS = {
-  dog:      { size: 'dog',   rescue: 'free',  work: 1.5, mass: 25, lane: 0, verb: 'make friends with the dog' },
+  dog:      { size: 'dog',   rescue: 'free',  work: 1.5, mass: 20, lane: 0, verb: 'make friends with the border collie' },
   rabbit:   { size: 'small', rescue: 'dig',   work: 0,   mass: 3,  lane: 0, verb: 'dig the rabbit out of its collapsed burrow' },
   chipmunk: { size: 'small', rescue: 'saw',   work: 0,   mass: 1,  lane: 0, verb: 'free the chipmunk pinned under the branch' },
   songbird: { size: 'small', rescue: 'free',  work: 2.5, mass: 0.3, lane: 1, verb: 'untangle the songbird from the brambles' },

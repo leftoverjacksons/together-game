@@ -97,3 +97,17 @@ test('a large helper pushes a stalled, heavily loaded camper up a hill', () => {
   assert.ok(withB.helped, 'the bear joined in');
   assert.ok(withB.best > without.best + 2, `bear helped: ${without.best.toFixed(1)} -> ${withB.best.toFixed(1)}`);
 });
+
+test('the collie hops into the camper when everyone is aboard, and out again', () => {
+  const sim = new Sim(1234);
+  const dog = find(sim, 'dog');
+  dog.state = 'companion';
+  sim.placeCamper(dog.x + 8);
+  const p = sim.addPlayer('a', 'A');
+  Object.assign(p.avatar, { mode: 'in', lx: 0 });
+  run(sim, 3);
+  assert.equal(dog.state, 'riding-dog', 'hopped in');
+  onFoot(sim, p, sim.camper.chassis.getPosition().x - 4, 0);
+  run(sim, 0.5);
+  assert.equal(dog.state, 'companion', 'hopped out');
+});

@@ -32,7 +32,7 @@ Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md):
   - Inventory panel (Tab): your pack, 12 tiles of camper storage, the roof rack, your partner's pack.
   - Finds: a pickaxe (breaks rock) and a jack (one person pushes like three).
 - **Animals (M4):**
-  - A dog near the start becomes your companion and sniffs out animals in trouble.
+  - A border collie near the start becomes your companion: it hops in and out of the camper with you and sniffs out animals in trouble.
   - Rabbits, chipmunks, songbirds and foxes need rescuing (dig, saw, untangle, unsnare) and then ride in the camper.
   - The deer, hawk, moose and bear walk or fly alongside and pull, lift or push when the camper struggles.
 
