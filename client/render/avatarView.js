@@ -1,6 +1,8 @@
 import { Container, Graphics } from 'pixi.js';
 import { PAL } from './palette.js';
 import { artSprite } from '../assets.js';
+import { toolGraphic } from './toolArt.js';
+import { TOOLS } from '../../shared/constants.mjs';
 
 // A rounded little traveller drawn in metres, feet at the origin, facing +x.
 export class AvatarView {
@@ -23,24 +25,8 @@ export class AvatarView {
     this.armB = limb('arm', darken(col.shirt), 0.12, 0.48, true); this.armB.position.set(-0.04, 1.08);
     this.armF = limb('arm', col.shirt, 0.12, 0.48); this.armF.position.set(0.06, 1.08);
     // Hand tools, held at the end of the front arm; one visible at a time.
-    const handle = 0x8a6440, steel = 0x9aa3a8;
-    const shovel = new Graphics()
-      .rect(-0.025, -0.35, 0.05, 0.66).fill(handle).rect(-0.07, 0.28, 0.14, 0.05).fill(0x6e4f33)
-      .poly([-0.1, -0.35, 0.1, -0.35, 0.08, -0.55, 0, -0.6, -0.08, -0.55]).fill(steel);
-    const axe = new Graphics()
-      .rect(-0.025, -0.45, 0.05, 0.6).fill(handle)
-      .poly([0.02, -0.45, 0.2, -0.52, 0.22, -0.32, 0.02, -0.36]).fill(steel).poly([0.18, -0.52, 0.22, -0.52, 0.24, -0.32, 0.2, -0.32]).fill(0xd7dde0);
-    const saw = new Graphics()
-      .roundRect(-0.06, -0.08, 0.12, 0.16, 0.04).fill(0xa8523a)
-      .poly([-0.04, -0.08, 0.04, -0.08, 0.06, -0.62, -0.02, -0.62]).fill(steel);
-    for (let y = -0.12; y > -0.6; y -= 0.06) saw.poly([-0.04 - (y + 0.08) * 0.04, y, -0.08 - (y + 0.08) * 0.04, y - 0.03, -0.04 - (y + 0.08) * 0.04, y - 0.06]);
-    saw.fill(steel);
-    const hammer = new Graphics()
-      .rect(-0.022, -0.36, 0.044, 0.44).fill(handle)
-      .roundRect(-0.12, -0.44, 0.24, 0.1, 0.02).fill(0x6f777c);
-    this.tools = { shovel, axe, saw, hammer };
-    for (const g of Object.values(this.tools)) { g.position.set(0, -0.44); this.armF.addChild(g); }
-    this.shovel = shovel;
+    this.tools = {};
+    for (const kind of TOOLS) { const g = toolGraphic(kind); g.position.set(0, -0.44); this.armF.addChild(g); this.tools[kind] = g; }
     const torsoArt = part('torso'), headArt = part('head');
     const body = new Container();
     if (torsoArt) body.addChild(torsoArt);
@@ -93,7 +79,7 @@ export class AvatarView {
     if (pushing) { this.armF.rotation = this.armB.rotation = 1.5; this.legF.rotation = -0.4; this.legB.rotation = 0.5; }
     if (carrying) { this.armF.rotation = this.armB.rotation = 2.4; }
     if (working) {
-      const sw = tool === 'axe' ? Math.max(0, Math.sin(time * 9)) * 2.2 - 0.2 : tool === 'saw' ? 1.3 + Math.sin(time * 16) * 0.35 : tool === 'hammer' ? 1.2 + Math.sin(time * 12) * 0.7 : 0.6 + Math.sin(time * 14) * 0.6;
+      const sw = tool === 'axe' || tool === 'pickaxe' ? Math.max(0, Math.sin(time * 9)) * 2.2 - 0.2 : tool === 'saw' ? 1.3 + Math.sin(time * 16) * 0.35 : tool === 'hammer' ? 1.2 + Math.sin(time * 12) * 0.7 : 0.6 + Math.sin(time * 14) * 0.6;
       this.armF.rotation = sw;
     }
     for (const [name, g] of Object.entries(this.tools)) g.visible = !inside && !carrying && name === tool;

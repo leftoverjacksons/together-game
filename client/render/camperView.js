@@ -72,14 +72,14 @@ export class CamperView {
     b.roundRect(-3.0, floor + 0.45, 1.05, 0.2, 0.08).fill(0x5f8fb0);
     b.roundRect(-2.95, floor + 0.55, 0.35, 0.16, 0.07).fill(0xf3ead8);
     // Kitchen counter and shelf.
-    b.rect(0.0, floor, 1.0, 0.75).fill(PAL.woodDark);
-    b.rect(-0.05, floor + 0.72, 1.1, 0.08).fill(PAL.woodLight);
-    b.rect(0.15, floor + 0.15, 0.32, 0.45).stroke({ width: 0.03, color: 0x7d5534 });
-    b.rect(0.55, floor + 0.15, 0.32, 0.45).stroke({ width: 0.03, color: 0x7d5534 });
-    b.rect(0.0, 1.25, 1.0, 0.06).fill(PAL.woodLight);
-    b.circle(0.2, 1.42, 0.11).fill(0xc2563f);
-    b.rect(0.45, 1.31, 0.14, 0.24).fill(0x6c9a5b);
-    b.rect(0.7, 1.31, 0.2, 0.18).fill(0xe8c66a);
+    b.rect(-0.3, floor, 0.8, 0.75).fill(PAL.woodDark);
+    b.rect(-0.35, floor + 0.72, 0.9, 0.08).fill(PAL.woodLight);
+    b.rect(-0.2, floor + 0.15, 0.28, 0.45).stroke({ width: 0.03, color: 0x7d5534 });
+    b.rect(0.14, floor + 0.15, 0.28, 0.45).stroke({ width: 0.03, color: 0x7d5534 });
+    b.rect(-0.3, 1.25, 0.8, 0.06).fill(PAL.woodLight);
+    b.circle(-0.1, 1.42, 0.11).fill(0xc2563f);
+    b.rect(0.12, 1.31, 0.14, 0.24).fill(0x6c9a5b);
+    b.rect(0.32, 1.31, 0.16, 0.18).fill(0xe8c66a);
     // Cab: dashboard and steering wheel.
     b.poly([2.35, floor + 0.55, 3.15, floor + 0.55, 3.1, floor + 0.95, 2.55, floor + 0.85]).fill(0x5a4a3c);
     b.rect(1.7, floor, 0.55, 0.45).fill(0x7d4f3a);                // seat base
@@ -91,6 +91,16 @@ export class CamperView {
     // Floor.
     b.rect(-3.05, floor - 0.27, 6.2, 0.27).fill(PAL.woodDark);
     b.moveTo(-3.05, floor).lineTo(3.0, floor).stroke({ width: 0.05, color: PAL.woodLight });
+    // Toolbox chest and winch control panel (stations).
+    const tb = INTERIOR.toolboxX;
+    b.roundRect(tb - 0.32, floor, 0.64, 0.38, 0.05).fill(0x9b4a37);
+    b.rect(tb - 0.32, floor + 0.3, 0.64, 0.06).fill(0x7c3a2b);
+    b.rect(tb - 0.06, floor + 0.2, 0.12, 0.08).fill(0xd8b25a);
+    const wx = INTERIOR.winchX;
+    b.roundRect(wx - 0.18, floor + 0.55, 0.36, 0.5, 0.05).fill(0x4a5258);
+    b.circle(wx - 0.07, floor + 0.92, 0.04).fill(0x8fd18a).circle(wx + 0.07, floor + 0.92, 0.04).fill(0xe0704e);
+    b.moveTo(wx, floor + 0.65).lineTo(wx + 0.12, floor + 0.85).stroke({ width: 0.04, color: 0x2e3438, cap: 'round' });
+    b.circle(wx + 0.12, floor + 0.85, 0.045).fill(0xc2563f);
     // Door frame at the rear.
     b.roundRect(INTERIOR.doorX - 0.35, floor, 0.7, 1.75, 0.1).stroke({ width: 0.06, color: PAL.woodDark });
     b.circle(INTERIOR.doorX + 0.24, floor + 0.85, 0.04).fill(0xd8b25a);
@@ -110,6 +120,8 @@ export class CamperView {
     f.rect(-3.32, -0.05, 0.18, 1.9).fill(PAL.body);                           // rear pillar
     f.rect(2.42, -0.55, 0.16, 2.4).fill(PAL.body);                            // B pillar
     f.roundRect(3.05, -0.2, 0.42, 0.36, 0.08).fill(0x5a5450);                 // bumper / winch mount
+    f.roundRect(3.12, -0.14, 0.28, 0.2, 0.06).fill(0x3e3a38);                 // winch drum
+    for (let k = 0; k < 4; k++) f.rect(3.16 + k * 0.06, -0.12, 0.02, 0.16).fill({ color: 0x8a8580, alpha: 0.6 });
     f.circle(3.32, 0.5, 0.13).fill(PAL.lamp);                                 // headlight
     f.rect(-3.42, 0.25, 0.14, 0.25).fill(0xd24b3f);                           // taillight
   }

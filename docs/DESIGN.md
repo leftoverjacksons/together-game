@@ -79,7 +79,11 @@ Design pillars:
   - a raked (angled-back) front so the camper climbs onto obstacles instead of ramming them
 - Stations, operated from inside (Lovers-style):
   - **Cab:** throttle, brake. Possibly low/high range.
-  - **Winch:** front-mounted, anchors to trees and rocks, tension-only cable.
+  - **Winch [built M3]:** front-mounted, tension-only cable up to 30 m.
+    - Someone outside takes the hook from the bumper (Q) and hooks it to a tree or stump (in the forest lane) or to rock.
+    - The winch station inside reels in or pays out (W / S). The pull is capped at about 26 kN, enough to haul the camper up a ledge it can't climb alone.
+    - A lone traveller can winch from the driver's seat.
+    - Digging away a rock anchor releases the hook.
   - **Roof crane / arm:** lifts logs and boards into place.
   - **Animal deck:** rescued animals ride here and add mass.
 - **[DECIDED] Roof rack:** stores lumber (boards and whole logs) where it can be seen. Everything stored adds mass. Players stow or take items while standing at the rear ladder.
@@ -90,7 +94,9 @@ Design pillars:
 
 ## 7. Players, tools and items
 
-- Each player carries **3 tool slots**, chosen from: shovel, axe, saw, hammer. *(M2 gives both players all four, until item handoff exists.)* Starting loadout: shovel, axe, saw, hammer split between the two players (to be tuned; e.g. 3 + 3 with overlap).
+- **[DECIDED, built M3]** Each player carries **3 tool slots**. Starting loadouts: shovel, axe, hammer / shovel, saw, hammer. The camper's **toolbox** (an interior station) holds spares, starting with a saw and an axe, so one player can fetch whatever is missing.
+  - Tools can be dropped (G), picked up from the ground (E), and handed to your partner (F).
+  - **Finds** lie along the stretch, mostly in the forest: a **pickaxe** (breaks rock slowly; the rubble goes in the bucket) and a **jack** (pushing a tipped camper with it counts as three people). Starting loadout: shovel, axe, saw, hammer split between the two players (to be tuned; e.g. 3 + 3 with overlap).
   - Number keys switch tools.
 - Possible finds: rope, jack, lantern, bucket, pickaxe, seeds.
 - Items can be **dropped**, **handed to the other player**, or **stored in the camper**.
@@ -240,7 +246,6 @@ Design pillars:
 ### Known limitations
 - On-foot travellers do not collide with the camper, and cannot stand on it.
 - The camper's mass changes with roof-rack cargo only, so far. Animals will add more.
-- Both players currently carry all four tools. Three slots, plus dropping and handing tools over, come with items (M3).
 - Rain is a manual toggle (R) until weather exists.
 - Unsupported structures get a 6 s grace period ("shaky") so they can be braced. This is a deliberate gameplay concession.
 - Only trees in the forest lane exist so far. Trees standing in the road lane as obstacles are planned.
@@ -268,7 +273,7 @@ Design pillars:
 
 1. **M1 — Core loop:** camper physics on procedural terrain; dig and fill; two players online; board and drive. *(First pass done 2026-10-10.)*
 2. **M2 — Timber and building:** handling fix, slumping, forest lane with trees, tool slots, felling, hauling, sawing, roof rack, structural boards, sound effects, visual detail pass. *(First pass done 2026-10-10.)*
-3. M3 — Winch, items and finds, dropping and handing items, cargo mass.
+3. **M3 — Winch, items and finds, dropping and handing items, cargo mass.** *(First pass done 2026-10-10.)*
 4. M4 — Animals: rescue interactions, small animals as the score, large animals as helpers.
 5. M5 — Stretches, camps, sanctuary, meta-progression.
 6. M6 — Local co-op and gamepad support.

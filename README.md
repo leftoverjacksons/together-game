@@ -26,7 +26,13 @@ Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md):
 - **Look:** layered painted-vector scenery (snowy peaks, haze, clouds, light shafts, deer, flowers) and particles.
 - **Modes:** online play for two, plus offline practice.
 
-Not yet: the winch, items and handoff, animals and rescue, real weather and night, camps and the sanctuary, local co-op on one machine. See the milestones in the design doc.
+- **Winch and tools (M3):**
+  - A winch station inside the camper; a lone driver can winch from the wheel.
+  - The hook goes from the front bumper to a tree, stump or rock.
+  - Three tool slots each; drop, pick up and hand over tools; a toolbox in the camper.
+  - Finds: a pickaxe (breaks rock) and a jack (one person pushes like three).
+
+Not yet: animals and rescue, real weather and night, camps and the sanctuary, local co-op on one machine. See the milestones in the design doc.
 
 ## Run locally
 
@@ -45,13 +51,15 @@ To test co-op on one computer, open the second player in a different browser or 
 | Key | Action |
 | --- | --- |
 | A / D | Walk. At the wheel: drive forward / reverse |
-| W / S | Step into the forest lane / back to the road |
+| W / S | Step into the forest lane / back to the road. At the winch station: reel in / pay out |
 | Space | Jump. At the wheel: brake |
-| E | Board, take or leave the wheel, climb out; pick up or let go of a log; take boards; use the roof rack; salvage a broken board; hold beside a tipped camper to push it upright |
-| 1–4 / mouse wheel | Shovel, axe, saw, hammer |
-| Left mouse | Dig · chop · saw · drag to place a board |
+| E | Use what is nearby: board the camper, stations (wheel, winch, toolbox), logs, boards, tools on the ground, roof rack; hold beside a tipped camper to push it upright |
+| Q | Winch hook: take it from the front bumper, hook it to a tree, stump or rock, unhook, stow. At the toolbox: next tool |
+| 1–3 / mouse wheel | Choose a tool slot |
+| Left mouse | Dig · chop · saw · break rock (pickaxe) · drag to place a board |
 | Right mouse | Place soil (shovel) · remove a board (hammer) |
-| G | Drop carried boards |
+| F | Hand your tool to your partner |
+| G / B | Drop your tool / drop carried boards |
 | R | Toggle rain (testing) |
 | M | Sound on / off |
 | H | Controls panel |

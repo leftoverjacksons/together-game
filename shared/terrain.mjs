@@ -145,8 +145,9 @@ export class Terrain {
   }
 
   // Remove soil around (x, y). Returns changed nodes and volume removed (m²).
-  dig(x, y, radius, strength, maxVolume) {
-    return this.#brush(x, y, radius, strength, maxVolume, -1, null);
+  // allowRock: a pickaxe can break rock (slowly).
+  dig(x, y, radius, strength, maxVolume, allowRock = false) {
+    return this.#brush(x, y, radius, strength, maxVolume, -1, null, allowRock);
   }
 
   // Add soil around (x, y). `blocked(wx, wy)` rejects nodes occupied by bodies.
@@ -164,7 +165,7 @@ export class Terrain {
     return this.#brush(x, y, radius, strength, maxVolume, 1, blocked);
   }
 
-  #brush(x, y, radius, strength, maxVolume, sign, blocked) {
+  #brush(x, y, radius, strength, maxVolume, sign, blocked, allowRock = false) {
     const indices = [], values = [];
     let volume = 0;
     const perUnit = (CELL * CELL) / 255;
@@ -177,7 +178,7 @@ export class Terrain {
         const q = (dx * dx + dy * dy) / (radius * radius);
         if (q > 1) continue;
         const i = iy * this.nx + ix;
-        if (sign < 0 && this.rock[i]) continue;
+        if (sign < 0 && this.rock[i] && !allowRock) continue;
         if (sign > 0 && blocked && blocked(wx, wy)) continue;
         const old = this.density[i];
         let delta = Math.round(strength * (1 - q));
