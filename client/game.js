@@ -12,6 +12,7 @@ import { TerrainView } from './render/terrainView.js';
 import { CamperView } from './render/camperView.js';
 import { AvatarView } from './render/avatarView.js';
 import { ForestView, LumberView } from './render/forestView.js';
+import { StructureView } from './render/structureView.js';
 import { Ambience } from './render/ambience.js';
 import { PAL } from './render/palette.js';
 
@@ -37,6 +38,8 @@ export class Game {
     this.pushing = false;
     this.cam = { x: 22, y: 18, viewH: 18 };
     this.time = 0;
+    this.collider = { solidAt: (x, y) => this.#solid(x, y) };
+    this.build = null;               // board being placed: { x, y }
   }
 
   async start(container) {
@@ -61,6 +64,7 @@ export class Game {
     this.forestLumber = new LumberView(this.forestView.items);
     this.terrainView = new TerrainView(this.world, this.terrain);
     this.camperView = new CamperView(this.world);
+    this.structureView = new StructureView(this.world);
     this.roadLumber = new LumberView(this.world);
     this.outside = new Container();
     this.world.addChild(this.outside);
@@ -95,7 +99,10 @@ export class Game {
         break;
       }
       case 'terrain': this.terrain?.applyEdits(msg.i, msg.v); break;
+      case 'notice': if (msg.to === this.myId) this.hud.toast(msg.msg); break;
+      case 'fx': this.onFx?.(msg); break;
       case 'snap': {
+        this.#updateColliders(msg.structure);
         this.snaps.push({ time: performance.now(), s: msg });
         if (this.snaps.length > 40) this.snaps.shift();
         break;
@@ -125,6 +132,25 @@ export class Game {
     });
     const tick = a.s.tick + (b.s.tick - a.s.tick) * t;
     return { camper, players, logs, tick, tipped: b.s.tipped, driver: b.s.driver, latest: S[S.length - 1].s };
+  }
+
+  // Boards are solid for travellers on foot, alongside the terrain.
+  #updateColliders(st) {
+    if (!st) return;
+    const joints = new Map(st.j.map(j => [j[0], j]));
+    this.boardSegs = st.b.map(([, a, b]) => { const A = joints.get(a), B = joints.get(b); return [A[1], A[2], B[1], B[2]]; });
+    this.joints = st.j;
+  }
+
+  #solid(x, y) {
+    if (this.terrain.solidAt(x, y)) return true;
+    for (const [ax, ay, bx, by] of this.boardSegs || []) {
+      if (x < Math.min(ax, bx) - 0.15 || x > Math.max(ax, bx) + 0.15) continue;
+      const dx = bx - ax, dy = by - ay;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)));
+      if (Math.hypot(x - ax - t * dx, y - ay - t * dy) < 0.09) return true;
+    }
+    return false;
   }
 
   #camperPoint(c, lx, ly) {
@@ -165,9 +191,10 @@ export class Game {
       // Step between the road and the forest behind it.
       if (inp.hit('w', 'arrowup') && me.lane !== 1) { me.lane = 1; me.y = floorAt(this.floor, me.x); me.vy = 0; me.onGround = true; }
       else if (inp.hit('s', 'arrowdown') && me.lane === 1) { me.lane = 0; me.y = this.terrain.groundY(me.x, floorAt(this.floor, me.x) + 1.5); me.vy = 0; }
+      if (me.lane === 1 || TOOLS[this.tool] !== 'hammer') this.build = null;
       const input = { move, jump: inp.held(' '), speed };
       if (me.lane === 1) stepForest(me, x => floorAt(this.floor, x), input, dt, c.x);
-      else stepAvatar(me, this.terrain, input, dt, c.x);
+      else stepAvatar(me, this.collider, input, dt, c.x);
 
       const ctx = this.#context(view, latestMe, door, carried);
       prompt = ctx.prompt;
@@ -243,6 +270,10 @@ export class Game {
       if (boards) return { prompt: `<b>E</b> stow ${boards} board${boards > 1 ? 's' : ''} on the roof rack`, action: send({ t: 'stow' }) };
       if (rack.boards) return { prompt: '<b>E</b> take boards from the roof rack', action: send({ t: 'unstow' }) };
       if (rack.logs.length) return { prompt: '<b>E</b> unload a log from the roof rack', action: send({ t: 'unstow' }) };
+    }
+    if (lane === 0 && (latestMe?.boards || 0) < BOARD_CARRY) {
+      const deb = (latest.structure?.d || []).find(d => Math.hypot(d[1] - me.x, d[2] - me.y - 0.5) < WORK_RANGE + 0.4);
+      if (deb) return { prompt: '<b>E</b> salvage the broken board', action: send({ t: 'salvage', id: deb[0] }) };
     }
     const log = this.#nearestLog(view, lane);
     if (log) {
@@ -327,7 +358,51 @@ export class Game {
     return this.#hammer(now, view, latestMe);
   }
 
-  #hammer() { return { working: false }; }
+  #snapJoint(p) {
+    let best = null, bd = 0.35;
+    for (const [, x, y] of this.joints || []) { const d = Math.hypot(x - p.x, y - p.y); if (d < bd) { bd = d; best = { x, y, joint: true }; } }
+    return best || p;
+  }
+
+  #anchorAt(p) {
+    if (p.joint) { const j = (this.joints || []).find(j => j[1] === p.x && j[2] === p.y); return j ? j[3] === 1 : false; }
+    const t = this.terrain;
+    return t.solidAt(p.x, p.y) || t.solidAt(p.x, p.y - 0.15) || t.solidAt(p.x - 0.12, p.y - 0.06) || t.solidAt(p.x + 0.12, p.y - 0.06);
+  }
+
+  // Hammer: drag with the left button to place a board; right-click removes one.
+  #hammer(now, view, latestMe) {
+    const m = this.input.mouse, me = this.me;
+    const boards = latestMe?.boards || 0;
+    if ((me.lane || 0) !== 0) return { working: false, hint: '<b>S</b> back to the road to build' };
+    const p = this.#snapJoint(this.#mouseWorld());
+    const hands = { x: me.x, y: me.y + 0.9 };
+    if (m.right && !this.removing) { this.removing = true; this.session.send({ t: 'unbuild', x: p.x, y: p.y }); }
+    if (!m.right) this.removing = false;
+    if (m.left && !this.build) {
+      if (!boards) { this.structureView.drawGhost(null); return { working: false, hint: 'No boards: saw a log, or take some from the roof rack' }; }
+      if (Math.hypot(p.x - hands.x, p.y - hands.y) <= REACH + 0.6) this.build = p;
+    }
+    if (this.build) {
+      let b = p;
+      const len = Math.hypot(b.x - this.build.x, b.y - this.build.y);
+      if (len > 3 && !b.joint) { const k = 3 / len; b = { x: this.build.x + (b.x - this.build.x) * k, y: this.build.y + (b.y - this.build.y) * k }; }
+      const ancA = this.#anchorAt(this.build), ancB = this.#anchorAt(b);
+      const L = Math.hypot(b.x - this.build.x, b.y - this.build.y);
+      const ok = L >= 0.5 && L <= 3.001 && (ancA || ancB || this.build.joint || b.joint);
+      this.structureView.drawGhost(this.build, b, ok, ancA, ancB);
+      if (!m.left) {
+        if (ok) { this.session.send({ t: 'build', ax: this.build.x, ay: this.build.y, bx: b.x, by: b.y }); this.lastTool = now; }
+        this.build = null;
+        this.structureView.drawGhost(null);
+        return { working: true };
+      }
+      return { working: false, hint: ok ? 'Release to place the board' : L > 3 ? 'Boards are at most 3 m' : 'Start or end on the ground or on another board' };
+    }
+    this.structureView.drawGhost(null);
+    if (now - this.lastTool < 400) return { working: true };
+    return { working: false, hint: `Drag with <b>left mouse</b> to place a board (${boards} carried) · <b>right-click</b> removes one` };
+  }
 
   #render(dt, view, { working }) {
     const { width: w, height: h } = this.app.screen;
@@ -366,6 +441,8 @@ export class Game {
     const piles = view.latest.piles || [];
     this.forestLumber.update(view.logs.filter(l => l.lane === 1), piles.filter(p => p.lane === 1));
     this.roadLumber.update(view.logs.filter(l => l.lane === 0), piles.filter(p => p.lane === 0));
+    this.structureView.update(view.latest.structure, this.time, me.mode === 'out' && TOOLS[this.tool] === 'hammer');
+    if (!(me.mode === 'out' && TOOLS[this.tool] === 'hammer')) this.structureView.drawGhost(null);
 
     // Travellers.
     view.players.forEach((p, index) => {

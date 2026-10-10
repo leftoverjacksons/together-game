@@ -18,6 +18,12 @@ const hud = {
     el.dataset.state = s;
     if (s === 'error') { $('menu').hidden = false; fail(detail || 'Could not join.'); }
   },
+  toast(msg) {
+    const el = $('toast');
+    el.textContent = msg; el.hidden = false;
+    clearTimeout(this._toast);
+    this._toast = setTimeout(() => (el.hidden = true), 3200);
+  },
   joined(code) {
     $('menu').hidden = true;
     $('hud').hidden = false;

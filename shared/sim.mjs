@@ -5,6 +5,7 @@ import {
 } from './constants.mjs';
 import { Terrain } from './terrain.mjs';
 import { newAvatar } from './character.mjs';
+import { Structure } from './structure.mjs';
 import { forestFloor, floorAt, generateTrees, TREE_HP, logLength, boardsFromLog, LOG_THICKNESS } from './forest.mjs';
 
 // Authoritative simulation for one trip: terrain, camper physics, player
@@ -28,6 +29,7 @@ const ACTIVE_RANGE = 44;          // metres around the camper with collision bui
 const DIG_STRENGTH = 70, FILL_STRENGTH = 70;
 const CHOP_EVERY = 18, SAW_EVERY = 6, SAW_WORK = 36;   // ticks between strokes; strokes per log
 const CARRY_FORCE = 3400, CARRY_K = 3200, CARRY_C = 450, CARRY_SLIP = 2.6;
+const MAX_BOARDS = 150;
 const SLUMP_EVERY = 6;           // ticks between settling passes (10 Hz)
 const PUSH_SPIN = 0.45, PUSH_RANGE = 4.8;   // rad/s per pusher
 const round = v => Math.round(v * 1000) / 1000;
@@ -55,6 +57,8 @@ export class Sim {
     this.piles = new Map();         // id -> { id, lane, x, y, n }
     this.rack = { boards: 0, logs: [] };
     this.nextId = 1;
+    this.structure = new Structure(this.world, this.terrain);
+    this.slumpBlocked = (ax, ay, bx, by) => this.structure.boards.size > 0 && this.structure.blocksSegment(ax, ay, bx, by);
     this.#createCamper(22);
   }
 
@@ -84,9 +88,10 @@ export class Sim {
     const wanted = new Set();
     for (let cy = 0; cy < t.chunksY; cy++) for (let cx = cx0; cx <= cx1; cx++) wanted.add(cy * t.chunksX + cx);
     // Keep ground under loose logs on the road, wherever they are.
-    for (const log of this.logs?.values() || []) {
-      if (!log.body) continue;
-      const lx = log.body.getPosition().x, size = CHUNK * CELL;
+    const loose = [...(this.logs?.values() || [])].map(l => l.body).concat([...(this.structure?.debris.values() || [])].map(d => d.body));
+    for (const body of loose) {
+      if (!body) continue;
+      const lx = body.getPosition().x, size = CHUNK * CELL;
       for (let cx = Math.max(0, Math.floor((lx - 6) / size)); cx <= Math.min(t.chunksX - 1, Math.floor((lx + 6) / size)); cx++)
         for (let cy = 0; cy < t.chunksY; cy++) wanted.add(cy * t.chunksX + cx);
     }
@@ -197,6 +202,9 @@ export class Sim {
       case 'drop': this.#dropBoards(p); break;
       case 'stow': this.#stow(p); break;
       case 'unstow': this.#unstow(p); break;
+      case 'build': this.#build(p, msg); break;
+      case 'unbuild': this.#unbuild(p, msg); break;
+      case 'salvage': this.#salvage(p, msg.id); break;
       case 'weather': this.wet = msg.wet === true; break;   // temporary toggle until weather exists
       case 'dig':
       case 'fill': this.#tool(p, msg); break;
@@ -237,9 +245,57 @@ export class Sim {
     }
     for (const q of this.players.values()) {
       const a = q.avatar;
-      if (a.mode === 'out' && Math.abs(wx - a.x) < 0.4 && wy > a.y - 0.1 && wy < a.y + 1.7) return true;
+      if (a.mode === 'out' && (a.lane || 0) === 0 && Math.abs(wx - a.x) < 0.4 && wy > a.y - 0.1 && wy < a.y + 1.7) return true;
     }
+    return this.structure.pointInBoard(wx, wy, 0.1);
+  }
+
+  #camperOccupied(wx, wy) {
+    const pt = Vec2(wx, wy);
+    const { chassis, wheels } = this.camper;
+    for (const b of [chassis, ...wheels]) for (let f = b.getFixtureList(); f; f = f.getNext()) if (f.testPoint(pt)) return true;
     return false;
+  }
+
+  // ----- Building -----
+
+  #notice(p, msg) { this.outbox.push({ t: 'notice', to: p.id, msg }); }
+
+  #build(p, msg) {
+    const vals = [msg.ax, msg.ay, msg.bx, msg.by].map(Number);
+    if (!vals.every(Number.isFinite) || TOOLS[p.tool] !== 'hammer' || p.avatar.mode !== 'out' || (p.avatar.lane || 0) !== 0) return;
+    if (p.boards < 1) return this.#notice(p, 'You need boards: saw a log, or take some from the roof rack');
+    if (this.structure.boards.size >= MAX_BOARDS) return this.#notice(p, 'That is a lot of boards already');
+    const [ax, ay, bx, by] = vals;
+    const hx = p.avatar.x, hy = p.avatar.y + 0.9;
+    if (Math.hypot(ax - hx, ay - hy) > REACH + 0.6) return this.#notice(p, 'Too far away');
+    const r = this.structure.place(ax, ay, bx, by, (x, y) => this.#camperOccupied(x, y));
+    if (r.error) return this.#notice(p, r.error);
+    p.boards--;
+    const fallen = this.structure.analyse();
+    if (r.board.unstable) this.#notice(p, 'Shaky! Brace it to the ground or another board before it falls');
+    if (fallen.length) this.outbox.push({ t: 'fx', kind: 'snap', n: fallen.length });
+  }
+
+  #unbuild(p, msg) {
+    if (TOOLS[p.tool] !== 'hammer' || p.avatar.mode !== 'out') return;
+    const x = Number(msg.x), y = Number(msg.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || Math.hypot(x - p.avatar.x, y - p.avatar.y - 0.9) > REACH + 0.6) return;
+    const b = this.structure.boardAt(x, y, 0.35);
+    if (!b) return;
+    this.structure.remove(b.id);
+    if (p.boards < BOARD_CARRY) p.boards++; else this.#addPile(0, x, 1);
+    const fallen = this.structure.analyse();
+    if (fallen.length) this.outbox.push({ t: 'fx', kind: 'snap', n: fallen.length });
+  }
+
+  #salvage(p, id) {
+    const d = this.structure.debris.get(id);
+    if (!d || p.avatar.mode !== 'out' || p.boards >= BOARD_CARRY) return;
+    const q = d.body.getPosition();
+    if (Math.hypot(q.x - p.avatar.x, q.y - p.avatar.y - 0.5) > WORK_RANGE + 0.5) return;
+    this.structure.salvage(id);
+    p.boards++;
   }
 
   // ----- Timber -----
@@ -508,6 +564,10 @@ export class Sim {
 
     this.#stepLogs(dt);
     this.world.step(dt, 8, 3);
+    if (this.structure.boards.size) {
+      const fallen = this.structure.step(dt, this.players.values());
+      if (fallen.length) this.outbox.push({ t: 'fx', kind: 'snap', n: fallen.length });
+    }
     if (this.tick % 15 === 0) this.#syncTerrainBodies();
 
     if (this.tick % SLUMP_EVERY === 0 && this.terrain.active.size) {
@@ -539,6 +599,7 @@ export class Sim {
       logs: [...this.logs.values()].map(l => { const q = this.logPose(l); return { id: l.id, lane: l.lane, len: l.len, x: round(q.x), y: round(q.y), a: round(q.a), c: l.carriers.map(c => c.pid), saw: l.saw / SAW_WORK }; }),
       piles: [...this.piles.values()].map(p => ({ id: p.id, lane: p.lane, x: round(p.x), y: round(p.y), n: p.n })),
       rack: { boards: this.rack.boards, logs: this.rack.logs.map(round) },
+      structure: this.structure.snapshot(),
     };
   }
 
