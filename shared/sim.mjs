@@ -229,10 +229,15 @@ export class Sim {
       case 'winch': if (this.#canWinch(p)) this.winch.reel = Math.max(-1, Math.min(1, msg.reel | 0)); break;
       case 'hook': this.#hook(p); break;
       case 'pickup': this.#pickup(p, msg.id); break;
-      case 'droptool': this.#dropTool(p); break;
-      case 'give': this.#give(p); break;
+      case 'droptool': this.#dropTool(p, msg.slot); break;
+      case 'give': this.#give(p, msg.slot); break;
       case 'store': this.#store(p, msg.slot | 0); break;
-      case 'retrieve': this.#retrieve(p, msg.index | 0); break;
+      case 'retrieve': this.#retrieve(p, msg.index | 0, msg.slot); break;
+      case 'swapSlots': {
+        const a = msg.a | 0, b = msg.b | 0;
+        if (a >= 0 && b >= 0 && a < TOOL_SLOTS && b < TOOL_SLOTS) [p.tools[a], p.tools[b]] = [p.tools[b], p.tools[a]];
+        break;
+      }
       case 'stowBoards': if (this.nearCamper(p)) this.#stowBoards(p); break;
       case 'takeBoards': if (this.nearCamper(p)) this.#takeBoards(p); break;
       case 'unseat': this.#unseat(p); break;
@@ -605,23 +610,31 @@ export class Sim {
     this.items.delete(it.id);
   }
 
-  #dropTool(p) {
-    const kind = this.toolOf(p);
-    if (!kind || p.avatar.mode !== 'out') return;
+  #slotOf(p, slot) { return Number.isInteger(slot) && slot >= 0 && slot < TOOL_SLOTS ? slot : p.tool; }
+
+  #dropTool(p, slotArg) {
+    const slot = this.#slotOf(p, slotArg);
+    const kind = p.tools[slot];
+    if (!kind) return;
+    if (p.avatar.mode === 'in') {   // dropping inside the camper puts it in storage
+      if (this.toolbox.length < TOOLBOX_SIZE) { this.toolbox.push(kind); p.tools[slot] = null; }
+      return;
+    }
     this.#addItem(kind, p.avatar.lane || 0, p.avatar.x + 0.3 * (p.avatar.facing || 1));
-    p.tools[p.tool] = null;
+    p.tools[slot] = null;
   }
 
-  #give(p) {
-    const kind = this.toolOf(p);
+  #give(p, slotArg) {
+    const slot = this.#slotOf(p, slotArg);
+    const kind = p.tools[slot];
     if (!kind) return;
     const q = [...this.players.values()].find(o => o !== p && o.connected && o.avatar.mode === p.avatar.mode &&
       (p.avatar.mode === 'in' ? Math.abs(o.avatar.lx - p.avatar.lx) < GIVE_RANGE : (o.avatar.lane || 0) === (p.avatar.lane || 0) && Math.hypot(o.avatar.x - p.avatar.x, o.avatar.y - p.avatar.y) < GIVE_RANGE));
     if (!q) return this.#notice(p, 'Get closer to your partner to hand it over');
-    const slot = q.tools.indexOf(null);
-    if (slot < 0) return this.#notice(p, 'Their hands are full: they need to drop or stow a tool');
-    q.tools[slot] = kind;
-    p.tools[p.tool] = null;
+    const free = q.tools.indexOf(null);
+    if (free < 0) return this.#notice(p, 'Their hands are full: they need to drop or stow a tool');
+    q.tools[free] = kind;
+    p.tools[slot] = null;
     this.#notice(q, `${p.name} handed you the ${TOOL_NAMES[kind].toLowerCase()}`);
   }
 
@@ -640,13 +653,15 @@ export class Sim {
     p.tools[slot] = null;
   }
 
-  // Take a tool from storage into a free slot, or swap it with the tool in hand.
-  #retrieve(p, index) {
+  // Take a tool from storage into a given slot (swapping whatever is there),
+  // or into a free slot, or swap it with the tool in hand.
+  #retrieve(p, index, target) {
     const kind = this.toolbox[index];
     if (!kind || !this.nearCamper(p)) return;
-    let slot = p.tools.indexOf(null);
-    this.toolbox.splice(index, 1);
-    if (slot < 0) { slot = p.tool; this.toolbox.push(p.tools[slot]); }
+    let slot = Number.isInteger(target) && target >= 0 && target < TOOL_SLOTS ? target : p.tools.indexOf(null);
+    if (slot < 0) slot = p.tool;
+    const old = p.tools[slot];
+    if (old) this.toolbox[index] = old; else this.toolbox.splice(index, 1);
     p.tools[slot] = kind;
     p.tool = slot;
   }

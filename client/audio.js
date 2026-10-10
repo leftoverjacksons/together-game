@@ -16,7 +16,7 @@ export class Audio {
     if (!Ctx) return;
     const ctx = this.ctx = new Ctx();
     this.master = ctx.createGain();
-    this.master.gain.value = 0.7;
+    this.master.gain.value = 1;
     this.master.connect(ctx.destination);
     const len = ctx.sampleRate * 2;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -28,7 +28,7 @@ export class Audio {
 
   toggleMute() {
     this.muted = !this.muted;
-    if (this.master) this.master.gain.setTargetAtTime(this.muted ? 0 : 0.7, this.ctx.currentTime, 0.05);
+    if (this.master) this.master.gain.setTargetAtTime(this.muted ? 0 : 1, this.ctx.currentTime, 0.05);
     return this.muted;
   }
 
@@ -183,7 +183,7 @@ export class Audio {
     // Wind: low noise with a slow swell.
     const wind = ctx.createBufferSource(); wind.buffer = this.noise; wind.loop = true;
     const wf = ctx.createBiquadFilter(); wf.type = 'lowpass'; wf.frequency.value = 380;
-    const wg = ctx.createGain(); wg.gain.value = 0.05;
+    const wg = ctx.createGain(); wg.gain.value = 0.07;
     const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07;
     const lg = ctx.createGain(); lg.gain.value = 0.035;
     lfo.connect(lg); lg.connect(wg.gain);
@@ -210,7 +210,7 @@ export class Audio {
     const ctx = this.ctx;
     if (ctx.currentTime < this.nextBird) return;
     this.nextBird = ctx.currentTime + (wet ? 6 : 1.5) + Math.random() * (wet ? 10 : 5);
-    const o = this.#out(this.listenerX + (Math.random() - 0.5) * 50, 0.18 + Math.random() * 0.12);
+    const o = this.#out(this.listenerX + (Math.random() - 0.5) * 50, 0.25 + Math.random() * 0.15);
     const kind = Math.floor(Math.random() * 3);
     const base = 2200 + Math.random() * 1800;
     const notes = kind === 0 ? 3 + Math.floor(Math.random() * 4) : kind === 1 ? 2 : 6;

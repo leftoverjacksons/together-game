@@ -56,8 +56,9 @@ export class Game {
     const send = msg => this.session.send(msg);
     this.inventory = new InventoryPanel(document.getElementById('inventory'), {
       select: i => this.#selectTool(i), store: i => send({ t: 'store', slot: i }), retrieve: i => send({ t: 'retrieve', index: i }),
-      drop: i => { this.#selectTool(i); send({ t: 'tool', i }); send({ t: 'droptool' }); }, give: () => send({ t: 'give' }),
+      drop: i => send({ t: 'droptool', slot: i }), give: () => send({ t: 'give' }),
       stowBoards: () => send({ t: 'stowBoards' }), takeBoards: () => send({ t: 'takeBoards' }), close: () => this.inventory.toggle(false),
+      swapSlots: (a, b) => send({ t: 'swapSlots', a, b }), retrieveTo: (i, slot) => send({ t: 'retrieve', index: i, slot }), giveSlot: i => send({ t: 'give', slot: i }),
     });
     this.toolIcons = await makeToolIcons(app.renderer);
     this.inventory.icons = this.toolIcons;
@@ -304,7 +305,7 @@ export class Game {
       const pa = partner?.a;
       const partnerNear = !!partner && partner.connected && pa.mode === me.mode && (me.mode === 'in' ? Math.abs(pa.lx - me.lx) < GIVE_RANGE : (pa.lane || 0) === (me.lane || 0) && Math.hypot(pa.x - me.x, pa.y - me.y) < GIVE_RANGE);
       this.inventory.update({
-        tools: latestMe?.tools || [], selected: this.tool, storage: latest.toolbox || [], near: this.#nearCamper(c),
+        tools: latestMe?.tools || [], selected: this.tool, storage: latest.toolbox || [], near: this.#nearCamper(c), inside: me.mode === 'in',
         boards: latestMe?.boards || 0, boardCap: BOARD_CARRY, rack: { boards: latest.rack?.boards || 0, logs: latest.rack?.logs.length || 0 },
         partner: partner ? { name: partner.name, tools: partner.tools || [], near: partnerNear } : null,
       });

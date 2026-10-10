@@ -3,7 +3,10 @@ import { OnlineSession, LocalSession } from './session.js';
 import { Audio } from './audio.js';
 
 const audio = new Audio();
-addEventListener('pointerdown', () => { if (audio.ctx?.state === 'suspended') audio.ctx.resume(); });
+// Browsers can suspend audio (tab switches, focus loss); resume on any interaction.
+const resumeAudio = () => { if (audio.ctx && audio.ctx.state !== 'running') audio.ctx.resume(); };
+for (const ev of ['pointerdown', 'keydown', 'focus']) addEventListener(ev, resumeAudio);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeAudio(); });
 
 const $ = id => document.getElementById(id);
 const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
