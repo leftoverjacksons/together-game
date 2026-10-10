@@ -138,6 +138,21 @@ export class Audio {
     this.#noise(o, { freq: 300, dur: 0.15, vol: 0.4 });
   }
 
+  bark(x) {
+    if (!this.ctx) return;
+    const o = this.#out(x, 0.6);
+    for (const d of [0, 0.22]) {
+      this.#tone(o, { type: 'sawtooth', freq: 420, to: 230, dur: 0.12, vol: 0.35, delay: d });
+      this.#noise(o, { type: 'bandpass', freq: 900, q: 2, dur: 0.1, vol: 0.5, delay: d });
+    }
+  }
+
+  chime() {
+    if (!this.ctx) return;
+    const o = this.#out(undefined, 0.45);
+    [523, 659, 784, 1047].forEach((f, k) => this.#tone(o, { type: 'triangle', freq: f, dur: 0.5, vol: 0.5, delay: k * 0.09 }));
+  }
+
   step(x, soft) {
     if (!this.ctx) return;
     const o = this.#out(x, soft ? 0.12 : 0.2);

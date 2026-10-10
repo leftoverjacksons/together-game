@@ -8,6 +8,7 @@ import { mulberry32 } from './rng.mjs';
 import { Terrain } from './terrain.mjs';
 import { newAvatar } from './character.mjs';
 import { Structure } from './structure.mjs';
+import { ANIMALS, RESCUE_RANGE, HELP_STAMINA, RIDE_SPOTS, placeAnimals } from './animals.mjs';
 import { forestFloor, floorAt, generateTrees, TREE_HP, logLength, boardsFromLog, LOG_THICKNESS } from './forest.mjs';
 
 // Authoritative simulation for one trip: terrain, camper physics, player
@@ -66,6 +67,135 @@ export class Sim {
     this.slumpBlocked = (ax, ay, bx, by) => this.structure.boards.size > 0 && this.structure.blocksSegment(ax, ay, bx, by);
     this.#createCamper(22);
     this.#placeFinds();
+    this.#placeAnimals();
+  }
+
+  // ----- Animals -----
+
+  #placeAnimals() {
+    this.animals = [];
+    this.rescued = 0;
+    this.struggle = { t: 0, dir: 1, active: false };
+    for (const spec of placeAnimals(this.terrain.length, this.seed)) {
+      const def = ANIMALS[spec.kind];
+      const lane = def.lane;
+      const x = spec.x;
+      const y = lane === 1 ? floorAt(this.floor, x) : this.terrain.groundY(x);
+      const a = { id: this.nextId++, kind: spec.kind, state: 'waiting', lane, x, y, progress: 0, facing: 1, stamina: 1, bark: 0, spot: -1, carrier: null, pin: null };
+      if (def.rescue === 'dig') {
+        // A collapsed burrow: a mound of soil over the rabbit.
+        for (const [dx, dy, r] of [[0, 0.35, 0.8], [0, 0.75, 0.75], [-0.6, 0.3, 0.6], [0.6, 0.3, 0.6], [0, 1.05, 0.55]]) {
+          const res = this.terrain.fill(x + dx, y + dy, r, 255, 10, null);
+          for (let k = 0; k < res.indices.length; k++) this.edits.set(res.indices[k], res.values[k]);
+        }
+      }
+      if (def.rescue === 'saw') a.pin = this.#addLog(0, 2.4, x + 0.2, y + 0.3).id;
+      this.animals.push(a);
+    }
+  }
+
+  #animalGround(a) {
+    return a.lane === 1 ? floorAt(this.floor, a.x) : this.terrain.groundY(a.x, a.y + 2.5);
+  }
+
+  #rescue(a) {
+    const def = ANIMALS[a.kind];
+    a.progress = 1; a.carrier = null;
+    if (def.size === 'small') {
+      const used = new Set(this.animals.filter(o => o.state === 'riding').map(o => o.spot));
+      a.state = 'riding';
+      a.spot = RIDE_SPOTS.findIndex((_, k) => !used.has(k));
+      this.rescued++;
+      this.#updateCargoMass();
+    } else if (def.size === 'dog') a.state = 'companion';
+    else { a.state = 'following'; a.lane = 1; }
+    this.outbox.push({ t: 'fx', kind: 'rescued', animal: a.kind, x: a.x });
+  }
+
+  #carryAnimal(p, id) {
+    const a = this.animals.find(o => o.id === id);
+    if (!a) return;
+    if (a.state === 'carried' && a.carrier === p.id) { a.state = 'waiting'; a.carrier = null; a.lane = p.avatar.lane || 0; return; }
+    if (a.state !== 'waiting' || ANIMALS[a.kind].rescue !== 'carry' || p.avatar.mode !== 'out') return;
+    if ((p.avatar.lane || 0) !== a.lane || Math.abs(p.avatar.x - a.x) > RESCUE_RANGE) return;
+    a.state = 'carried'; a.carrier = p.id;
+  }
+
+  #stepAnimals(dt) {
+    const ch = this.camper.chassis, cp = ch.getPosition(), cv = ch.getLinearVelocity();
+    // Struggling: someone is driving but the camper is barely moving.
+    const d = this.driver(), th = this.camper.throttle;
+    const along = cv.x * Math.sign(th || 1);
+    const S = this.struggle;
+    if (d && th && along < 1.0) S.t += dt; else if (!th || along > 2.5) S.t = 0;
+    S.active = S.t > 0.6;
+    S.dir = Math.sign(th || S.dir);
+    const outside = [...this.players.values()].filter(q => q.connected && q.avatar.mode === 'out');
+    const anyoneDriving = !!d && Math.abs(cv.x) > 1.5;
+    for (const a of this.animals) {
+      const def = ANIMALS[a.kind];
+      if (a.state === 'waiting') {
+        if (def.rescue === 'free') {
+          const workers = outside.filter(q => q.rescuing && (q.avatar.lane || 0) === a.lane && Math.abs(q.avatar.x - a.x) < RESCUE_RANGE).length;
+          if (workers) a.progress = Math.min(1, a.progress + (dt / def.work) * workers);
+          else a.progress = Math.max(0, a.progress - dt * 0.05);
+          if (a.progress >= 1) this.#rescue(a);
+        } else if (def.rescue === 'dig' && this.tick % 10 === 0) {
+          if (!this.terrain.solidAt(a.x, a.y + 0.3) && !this.terrain.solidAt(a.x, a.y + 0.6)) this.#rescue(a);
+        } else if (def.rescue === 'saw' && this.tick % 10 === 0) {
+          const log = this.logs.get(a.pin);
+          if (!log || Math.hypot(this.logPose(log).x - a.x, this.logPose(log).y - a.y) > 1.6) this.#rescue(a);
+        }
+        continue;
+      }
+      if (a.state === 'carried') {
+        const q = this.players.get(a.carrier);
+        if (!q || !q.connected) { a.state = 'waiting'; a.carrier = null; continue; }
+        a.x = q.avatar.x + 0.35 * (q.avatar.facing || 1); a.y = q.avatar.y + 1.0; a.lane = q.avatar.lane || 0; a.facing = q.avatar.facing;
+        if (this.nearCamper(q)) this.#rescue(a);
+        continue;
+      }
+      if (a.state === 'riding') continue;
+      // Moving animals: pick a target, walk or fly toward it.
+      let tx = a.x, ty = null, lane = a.lane, help = false;
+      if (def.size === 'dog') {
+        if (anyoneDriving) { a.state = 'riding-dog'; }
+        const seek = this.animals.find(o => o.state === 'waiting' && Math.abs(o.x - a.x) < 35);
+        const leader = outside.sort((u, v) => Math.abs(u.avatar.x - a.x) - Math.abs(v.avatar.x - a.x))[0];
+        if (seek) { tx = seek.x - Math.sign(seek.x - a.x) * 2.2; lane = seek.lane; if (Math.abs(tx - a.x) < 1.5 && this.tick - a.bark > 180) a.bark = this.tick; }
+        else if (leader) { tx = leader.avatar.x - (leader.avatar.facing || 1) * 1.6; lane = leader.avatar.lane || 0; }
+        else tx = cp.x - 3.5;
+      } else {
+        const can = a.stamina > HELP_STAMINA.min;
+        help = S.active && can && (def.helps !== 'lift' || ch.getAngle() * S.dir > 0.12 || S.t > 1.5);
+        if (help) a.stamina = Math.max(0, a.stamina - HELP_STAMINA.drain * dt);
+        else a.stamina = Math.min(1, a.stamina + HELP_STAMINA.recover * dt);
+        const offset = { deer: -5, moose: -8.5, bear: -11.5, hawk: 0 }[a.kind];
+        if (help && def.helps === 'pull') { tx = cp.x + S.dir * 6; lane = 0; }
+        else if (help && def.helps === 'push') { tx = cp.x - S.dir * 4.4; lane = 0; }
+        else tx = cp.x + offset;
+        if (a.kind !== 'hawk' && !help) lane = 1;
+        if (a.kind === 'hawk') { lane = 0; ty = help ? cp.y + 2.9 : cp.y + 5 + Math.sin(this.tick / 40) * 0.6; tx = help ? cp.x + S.dir * 1.2 : tx + Math.sin(this.tick / 70) * 4; }
+        if (help) {
+          const f = def.force;
+          if (def.helps === 'lift') ch.applyForce(Vec2(0, f), ch.getWorldPoint(Vec2(1.2 * S.dir, 1.5)), true);
+          else { const ax = ch.getWorldVector(Vec2(1, 0)); ch.applyForceToCenter(Vec2(ax.x * f * S.dir, ax.y * f * S.dir), true); }
+        }
+      }
+      if (a.state === 'riding-dog') {
+        if (!anyoneDriving && outside.length) a.state = 'companion';
+        else { a.lane = 0; continue; }
+      }
+      a.help = help;
+      if (lane !== a.lane) { a.lane = lane; a.y = this.#animalGround(a); }
+      const speed = def.size === 'dog' ? 7.5 : 10;
+      const step = Math.max(-speed * dt, Math.min(speed * dt, tx - a.x));
+      if (Math.abs(step) > 0.002) a.facing = Math.sign(step);
+      a.moving = Math.abs(step) > 0.01;
+      a.x = Math.max(1, Math.min(this.terrain.length - 1, a.x + step));
+      if (ty !== null) a.y += (ty - a.y) * Math.min(1, dt * 3);
+      else a.y = this.#animalGround(a);
+    }
   }
 
   // Finds: spare tools lying along the stretch, mostly among the trees.
@@ -248,6 +378,8 @@ export class Sim {
         break;
       }
       case 'push': p.pushing = msg.on === true; break;
+      case 'rescue': p.rescuing = msg.on === true; break;
+      case 'carryAnimal': this.#carryAnimal(p, msg.id); break;
       case 'tool': p.tool = Math.max(0, Math.min(TOOL_SLOTS - 1, msg.i | 0)); break;
       case 'chop': this.#chop(p); break;
       case 'saw': this.#saw(p); break;
@@ -541,7 +673,10 @@ export class Sim {
     this.#updateCargoMass();
   }
 
-  cargoMass() { return this.rack.boards * BOARD_MASS + this.rack.logs.reduce((s, len) => s + len * LOG_THICKNESS * LOG_DENSITY, 0); }
+  cargoMass() {
+    const animals = (this.animals || []).filter(a => a.state === 'riding').reduce((s, a) => s + ANIMALS[a.kind].mass, 0);
+    return this.rack.boards * BOARD_MASS + this.rack.logs.reduce((s, len) => s + len * LOG_THICKNESS * LOG_DENSITY, 0) + animals;
+  }
 
   // Cargo rides on the roof: it adds mass and raises the centre of gravity.
   #updateCargoMass() {
@@ -802,6 +937,7 @@ export class Sim {
 
     this.#stepLogs(dt);
     this.#stepWinch(dt);
+    this.#stepAnimals(dt);
     this.world.step(dt, 8, 3);
     if (this.structure.boards.size) {
       const fallen = this.structure.step(dt, this.players.values());
@@ -841,6 +977,8 @@ export class Sim {
       structure: this.structure.snapshot(),
       items: [...this.items.values()].map(it => ({ id: it.id, kind: it.kind, lane: it.lane, x: round(it.x), y: round(it.y) })),
       toolbox: this.toolbox,
+      rescued: this.rescued, struggling: this.struggle.active,
+      animals: this.animals.map(a => ({ id: a.id, kind: a.kind, state: a.state, x: round(a.x), y: round(a.y), lane: a.lane, p: round(a.progress), f: a.facing, help: !!a.help, moving: !!a.moving, bark: a.bark, spot: a.spot, stamina: round(a.stamina), carrier: a.carrier })),
       winch: { state: this.winch.state, carrier: this.winch.carrier, anchor: this.winch.anchor && { x: round(this.winch.anchor.x), y: round(this.winch.anchor.y), kind: this.winch.anchor.kind }, length: round(this.winch.length), reel: this.winch.reel, tension: round(this.winch.tension) },
     };
   }
