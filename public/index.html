@@ -1,27 +1,49 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#263b36"><title>Together - The Ridge Road</title><meta name="description" content="Cooperative overlanding. Shape the land, find an anchor, and bring your little home along."><link rel="stylesheet" href="/style.css"><script type="module" src="/game.js"></script></head>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Together</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
 <body>
-<canvas id="world" aria-label="Cooperative overlanding game"></canvas><div class="vignette"></div>
-<header class="masthead"><a class="brand" href="/">together<span class="brand-dot">.</span></a><span class="edition">THE RIDGE ROAD <span>/</span> FIELD TEST 003</span><button id="sound" class="quiet">Sound off</button></header>
-<main id="welcome"><div class="eyebrow"><span></span> COOPERATIVE OVERLANDING</div><h1>A little home.<br>A wild road.<br><em>Together.</em></h1><p class="intro">Dig a ramp. Find an anchor. Take it slow.<br>The route is yours to make.</p>
-<form id="lobby"><label for="name">YOUR TRAVELER</label><input id="name" maxlength="18" placeholder="What should we call you?" autocomplete="nickname" required><div class="lobby-actions"><button class="primary" id="create" type="submit">Start a journey <span>&nearr;</span></button><button class="secondary" type="button" id="join-toggle">Join a friend</button></div><div id="join-fields" hidden><label for="code">YOUR FRIEND'S TRIP CODE</label><div class="join-row"><input id="code" maxlength="10" placeholder="Trip code" autocapitalize="characters"><button class="primary" type="button" id="join">Join &rarr;</button></div></div><button id="resume" type="button" class="resume" hidden>Continue your last journey &rarr;</button><p id="error" role="alert"></p></form>
-<div class="welcome-foot">TWO TRAVELERS <b>/</b> ONE HOME <b>/</b> FIND YOUR OWN WAY</div></main>
-<div id="scene-caption"><span>02 / THE RIDGE ROAD</span><p>Getting there is the whole point.</p><small>Physics sandbox / keyboard + mouse recommended</small></div>
-<section id="hud" hidden>
-<div id="radial" role="dialog" aria-label="Object actions" hidden><div id="radial-options"></div><button id="radial-close" aria-label="Close actions">&times;</button><strong id="radial-title"></strong><small id="radial-hint"></small></div>
-<div id="rollover" hidden><span>The house is on its side.</span><button id="right-house">Right the house</button></div>
-<div class="trip-bar"><div class="trip-badge"><span class="live-dot"></span><span id="connection">Connecting</span></div><button id="invite" class="quiet">Invite a friend &nearr;</button><button id="help" class="quiet">Field guide ?</button><button id="recover" class="quiet">Recover</button><button id="leave" class="quiet">Leave</button></div>
-<div class="objective-card"><span class="eyebrow">THE RIDGE ROAD / FIND YOUR OWN ROUTE</span><h2 id="objective"></h2><div class="route-line"><span id="route-progress"></span></div><div class="route-labels"><span>TRAILHEAD</span><span>STILLWATER</span></div></div><div id="crew"></div>
-<div id="telemetry"><div><strong id="grade">0 deg</strong><small>PITCH</small></div><div><strong id="traction">2/2 wheels</strong><small>CONTACT</small></div><div><strong id="speed">0 km/h</strong><small>SPEED</small></div><span id="brake-status">BRAKE ON</span></div>
-<div id="tension-box" hidden><span>WINCH LOAD</span><meter id="tension" min="0" max="100" high="90" optimum="30" value="0"></meter><small id="tension-label"></small></div>
-<div id="tools"><div class="tool-heading">FIELD KIT <span>SOIL <b id="soil-count">45</b></span></div><div class="tool-buttons"><button data-tool="dig" aria-pressed="true"><kbd>1</kbd> Dig</button><button data-tool="fill" aria-pressed="false"><kbd>2</kbd> Fill</button><button data-tool="cable" aria-pressed="false"><kbd>3</kbd> Cable</button><button data-tool="saw" aria-pressed="false"><kbd>4</kbd> Saw</button><button data-tool="timber" aria-pressed="false"><kbd>5</kbd> Timber</button></div><p id="tool-description">Step outside to use your tools.</p></div>
-<button id="brush-done" hidden>Done shaping &times;</button>
-<div class="bottom-bar"><div class="controls"><span><kbd>A</kbd><kbd>D</kbd> move / drive</span><span><kbd>SPACE</kbd> jump / reel</span><span>Click objects for actions</span></div><button id="journal-button" class="quiet">Journey notes <span id="note-count">0</span></button></div>
-<div id="interaction" hidden><kbd>E</kbd><span></span></div><div id="toast" role="status"></div><div id="solo-hint"></div>
-<div id="touch"><button data-key="left" aria-label="Move left">&larr;</button><button data-key="right" aria-label="Move right">&rarr;</button><button data-key="jump">Jump / reel</button><button data-key="brake">Brake</button><button id="touch-e">E</button></div></section>
-<dialog id="guide"><button class="close" data-close="guide" aria-label="Close">&times;</button><div class="eyebrow">FIELD TEST 003 / OVERLANDING</div><h2>Make a way through.</h2><p>Click the house, a tree, a rock, timber, or the ground to open its action wheel. Choose Drive, Step outside, Attach cable, Fell tree, Dig, or Place soil. Keyboard shortcuts are optional.</p><dl><dt>A / D</dt><dd>Walk, or throttle at the wheel. SHIFT holds the brake. Leaving the wheel applies the parking brake.</dd><dt>E</dt><dd>Board, use a station, or leave it. Walk to the far left of the cabin to exit.</dd><dt>Space / S</dt><dd>Space jumps on foot. At the winch, Space reels in and S pays cable out. A solo driver can operate the winch too.</dd><dt>Click ground</dt><dd>Choose Dig or Place soil, then hold the mouse to shape the ground. Right-click or Esc returns to the action wheel. Keys 1 / 2 also work.</dd><dt>Click anchor</dt><dd>Walk to a tree or rock and choose Attach cable. Choose Release cable to detach. Disabled actions tell you when to move closer.</dd><dt>Click tree</dt><dd>Choose Fell tree to keep sawing until it falls. Move or press Esc to stop. Its trunk becomes physical timber.</dd><dt>Click timber</dt><dd>Choose Pick up. Click again to rotate or set down. Q / R and E still work. Logs can support wheels, slide, or roll.</dd><dt>Mouse wheel</dt><dd>Zoom out to scout. H reopens this guide.</dd></dl><p><b>Try this first:</b> park before the pine, get out, and fell it. Move the log out of your way or use it on the approach. Climb ahead to the ridge tree to attach the winch, then trade jobs. You can also reshape the climb with your shovel.</p><p class="fine">If the house tips over, use the visible Right the house button or its action wheel. It restores everyone upright on nearby clear ground; earthworks stay. Recover is also available from anywhere. This is a simplified 2D physics test with fixed cabin construction, not an engineering simulator. Trips reset on server restart.</p><button class="primary" data-close="guide">Let's get going &rarr;</button></dialog>
-<dialog id="recovery"><button class="close" data-close="recovery" aria-label="Close">&times;</button><div class="eyebrow">A HELPING HAND</div><h2>Back to solid ground?</h2><p>Recovery works from anywhere. It returns the house and both travelers to safe ground near the last turnout, releases the cable, and drops carried logs. Your terrain work stays in place.</p><button id="confirm-recover" class="primary">Recover the house</button><button class="secondary" data-close="recovery">Keep trying</button></dialog>
-<dialog id="journal"><button class="close" data-close="journal" aria-label="Close">&times;</button><div class="eyebrow">THINGS WE'LL REMEMBER</div><h2>Journey notes.</h2><div id="notes"></div></dialog>
-<dialog id="invitation"><button class="close" data-close="invitation" aria-label="Close">&times;</button><div class="eyebrow">ROOM FOR ONE MORE</div><h2>Better together.</h2><p>Send this link to your fellow traveler.</p><input id="invite-url" readonly aria-label="Invitation URL"><button id="copy" class="primary">Copy invitation</button><p>Trip code: <strong id="trip-code"></strong></p><p class="fine" id="local-note"></p></dialog>
-<dialog id="ending"><div class="eyebrow">THE RIDGE ROAD / COMPLETE</div><h2>Home is wherever<br>we park.</h2><p>You brought your little house to Stillwater. You made your own way here.</p><p id="dog-ending"></p><button id="stay" class="primary">Stay a little while</button><button id="new-trip" class="secondary">Another journey</button></dialog>
-</body></html>
+  <div id="stage"></div>
+
+  <section id="menu" class="panel">
+    <h1>Together</h1>
+    <p class="tag">A big old camper, a long wild road, and the two of you.</p>
+    <label>Your name <input id="name" maxlength="20" placeholder="Traveller" autocomplete="nickname"></label>
+    <button id="create" class="primary">Start a trip</button>
+    <div class="row"><input id="code" maxlength="6" placeholder="Trip code" autocomplete="off"><button id="join">Join</button></div>
+    <button id="practice" class="quiet">Practise alone (offline)</button>
+    <p id="menu-error" role="alert"></p>
+  </section>
+
+  <div id="hud" hidden>
+    <div id="top-left">
+      <div id="trip" hidden>Trip <b id="trip-code"></b> <button id="copy">Copy invite link</button></div>
+      <div id="players"></div>
+    </div>
+    <div id="top-right">
+      <div class="meter"><span>Soil</span><div class="bar"><div id="soil-fill"></div></div></div>
+      <div id="mass"></div>
+      <div id="status"></div>
+      <button id="help-toggle">Controls (H)</button>
+    </div>
+    <div id="tipped" hidden>The camper is over! Get out and hold <b>E</b> beside it to push it upright.</div>
+    <div id="prompt" hidden></div>
+    <div id="help" class="panel" hidden>
+      <h2>Controls</h2>
+      <table>
+        <tr><td>A / D</td><td>Walk · drive when at the wheel</td></tr>
+        <tr><td>W / Space</td><td>Jump · brake when at the wheel</td></tr>
+        <tr><td>E</td><td>Board · take the wheel · climb out · push (hold)</td></tr>
+        <tr><td>Left mouse (hold)</td><td>Dig soil into your bucket</td></tr>
+        <tr><td>Right mouse (hold)</td><td>Place soil against the ground</td></tr>
+        <tr><td>H</td><td>Show or hide this panel</td></tr>
+      </table>
+    </div>
+  </div>
+  <script type="module" src="/game.js"></script>
+</body>
+</html>

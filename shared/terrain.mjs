@@ -1,55 +1,283 @@
-// Shared contour geometry: the renderer and physics use the same boundary.
-// Existing edit cells remain network-compatible; untouched terrain keeps its
-// continuous elevation rather than being quantized to the cell lattice.
-const C=224,R=64,S=20;
-const profile=[[0,740],[620,740],[900,700],[1110,495],[1350,440],[1520,480],[1730,650],[1840,790],[1950,870],[2090,690],[2280,570],[2460,520],[2660,650],[2850,730],[2990,670],[3130,400],[3370,370],[3570,470],[3820,610],[4080,620],[4480,620]];
-export function initialSurface(x){for(let i=1;i<profile.length;i++)if(x<=profile[i][0]){const [a,y]=profile[i-1],[b,z]=profile[i];return y+(z-y)*(x-a)/(b-a);}return 620;}
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-const arrays=new WeakMap();let stringCache=null;
-export function terrainMesh(s){
-  const old=typeof s.terrain==='string'?stringCache:arrays.get(s.terrain);
-  if(old&&old.source===s.terrain&&old.version===s.terrainVersion)return old;
-  const field=new Float32Array(C*R),cells=Array.from({length:(C-1)*(R-1)},()=>[]),polygons=[],segments=[];
-  for(let r=0;r<R;r++)for(let c=0;c<C;c++){
-    const x=c*S+10,y=r*S+10,base=initialSurface(x),original=r*S>=base,current=Number(s.terrain[r*C+c])>0;
-    field[r*C+c]=original===current?clamp((y-base)/S,-1,1):(current?1:-1);
+import { CELL, CHUNK, WORLD_HEIGHT } from './constants.mjs';
+import { mulberry32, fbm1, noise1 } from './rng.mjs';
+
+// Editable terrain: a grid of density nodes (0 = air, 255 = solid, threshold
+// 127.5) plus a rock mask that cannot be dug. Contours are extracted per chunk
+// with marching squares, so the same geometry drives collision and rendering.
+
+export const ISO = 127.5;
+const SOIL_BANDS = [0.4, 1.1, 1.9, 2.9];   // strata depth thresholds (metres)
+
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+
+export class Terrain {
+  constructor(length, seed) {
+    this.seed = seed >>> 0;
+    this.length = length;
+    this.nx = Math.round(length / CELL) + 1;
+    this.ny = Math.round(WORLD_HEIGHT / CELL) + 1;
+    this.density = new Uint8Array(this.nx * this.ny);
+    this.rock = new Uint8Array(this.nx * this.ny);
+    this.surface = new Float32Array(this.nx);   // generated surface height per column
+    this.rockTop = new Float32Array(this.nx);   // generated top of undiggable rock per column
+    this.chunksX = Math.ceil((this.nx - 1) / CHUNK);
+    this.chunksY = Math.ceil((this.ny - 1) / CHUNK);
+    // Bumped whenever a chunk's nodes change; consumers keep their own copies.
+    this.chunkVersion = new Uint32Array(this.chunksX * this.chunksY);
+    this.features = [];
+    this.generate();
   }
-  const vertex=(c,r)=>({x:c*S+10,y:r*S+10,v:field[r*C+c]});
-  function triangle(points,bin){
-    const polygon=[],crossings=[];
-    for(let i=0;i<3;i++){const a=points[i],b=points[(i+1)%3];if(a.v>=0)polygon.push(a);if((a.v>=0)!==(b.v>=0)){const t=a.v/(a.v-b.v),q={x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};polygon.push(q);crossings.push(q);}}
-    if(polygon.length>=3)polygons.push(polygon);
-    if(crossings.length===2){const [a,b]=crossings,dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy);if(len<1e-5)return;let nx=dy/len,ny=-dx/len;const inside=points.find(p=>p.v>0);if(inside&&(inside.x-(a.x+b.x)/2)*nx+(inside.y-(a.y+b.y)/2)*ny>0){nx=-nx;ny=-ny;}const edge={a,b,nx,ny};segments.push(edge);bin.push(edge);}
+
+  idx(x, y) { return y * this.nx + x; }
+
+  generate() {
+    const { nx, ny, seed } = this;
+    const rand = mulberry32(seed);
+    const h = new Float32Array(nx);
+    const soilDepth = new Float32Array(nx);
+    const rockBump = new Float32Array(nx);
+
+    for (let ix = 0; ix < nx; ix++) {
+      const x = ix * CELL;
+      h[ix] = 16 + 3.5 * fbm1(x / 45, seed) + 0.9 * fbm1(x / 8, seed + 77, 3);
+      soilDepth[ix] = 2.2 + 2.5 * noise1(x / 13, seed + 31);
+    }
+
+    // Set pieces, spaced along the stretch. Each modifies the height profile.
+    const kinds = ['ravine', 'hill', 'ledge', 'boulder', 'dip'];
+    let cursor = 60 + rand() * 20;
+    const end = this.length - 60;
+    let last = '';
+    while (cursor < end) {
+      let kind = kinds[Math.floor(rand() * kinds.length)];
+      if (kind === last) kind = kinds[(kinds.indexOf(kind) + 1) % kinds.length];
+      last = kind;
+      const f = { kind, x: cursor };
+      if (kind === 'ravine') { f.width = 4.5 + rand() * 3.5; f.depth = 2.8 + rand() * 1.8; }
+      if (kind === 'hill') { f.width = 26 + rand() * 14; f.height = 4.5 + rand() * 3.5; }
+      if (kind === 'ledge') { f.height = (rand() < 0.5 ? 1 : -1) * (1.4 + rand() * 1.0); }
+      if (kind === 'boulder') { f.width = 3 + rand() * 2.5; f.height = 1.3 + rand() * 1.2; }
+      if (kind === 'dip') { f.width = 12 + rand() * 6; f.depth = 2 + rand() * 1.5; }
+      this.features.push(f);
+      cursor += 65 + rand() * 45;
+    }
+
+    for (let ix = 0; ix < nx; ix++) {
+      const x = ix * CELL;
+      for (const f of this.features) {
+        const d = x - f.x;
+        if (f.kind === 'ravine') {
+          const edge = 0.5;
+          const inside = smoothstep(-f.width / 2 - edge, -f.width / 2, d) * (1 - smoothstep(f.width / 2, f.width / 2 + edge, d));
+          h[ix] -= f.depth * inside;
+        } else if (f.kind === 'hill') {
+          const t = d / (f.width / 2);
+          if (Math.abs(t) < 1) h[ix] += f.height * (1 - t * t) * (1 - t * t);
+        } else if (f.kind === 'ledge') {
+          h[ix] += f.height * smoothstep(-0.4, 0.4, d);
+        } else if (f.kind === 'boulder') {
+          const t = d / (f.width / 2);
+          if (Math.abs(t) < 1) rockBump[ix] = Math.max(rockBump[ix], f.height * Math.sqrt(1 - t * t));
+        } else if (f.kind === 'dip') {
+          const t = d / (f.width / 2);
+          if (Math.abs(t) < 1) h[ix] -= f.depth * (1 - t * t) * (1 - t * t);
+        }
+      }
+    }
+
+    // Level pads at the start and end (camps).
+    const startH = h[Math.round(40 / CELL)];
+    const endIx = Math.round((this.length - 40) / CELL);
+    const endH = h[endIx];
+    for (let ix = 0; ix < nx; ix++) {
+      const x = ix * CELL;
+      const a = 1 - smoothstep(18, 40, x);
+      const b = smoothstep(this.length - 40, this.length - 18, x);
+      h[ix] = h[ix] * (1 - a) + startH * a;
+      h[ix] = h[ix] * (1 - b) + endH * b;
+    }
+
+    for (let ix = 0; ix < nx; ix++) {
+      const top = h[ix] + rockBump[ix];
+      this.surface[ix] = top;
+      const rockTop = rockBump[ix] > 0 ? top : h[ix] - soilDepth[ix];
+      this.rockTop[ix] = rockTop;
+      for (let iy = 0; iy < ny; iy++) {
+        const y = iy * CELL;
+        const i = iy * nx + ix;
+        this.density[i] = clamp(Math.round(ISO + ((top - y) / CELL) * 64), 0, 255);
+        this.rock[i] = y < rockTop && this.density[i] >= 128 ? 1 : 0;
+      }
+    }
+    this.chunkVersion.fill(1);
   }
-  for(let r=0;r<R-1;r++)for(let c=0;c<C-1;c++){
-    const a=vertex(c,r),b=vertex(c+1,r),d=vertex(c,r+1),e=vertex(c+1,r+1),bin=cells[r*(C-1)+c];
-    triangle([a,b,e],bin);triangle([a,e,d],bin);
+
+  sampleDensity(x, y) {
+    if (y < 0) return 255;
+    if (x < 0 || x > this.length) return 255;
+    const fx = x / CELL, fy = y / CELL;
+    if (fy >= this.ny - 1) return 0;
+    const ix = Math.min(Math.floor(fx), this.nx - 2), iy = Math.floor(fy);
+    const tx = fx - ix, ty = fy - iy;
+    const d = this.density, nx = this.nx, i = iy * nx + ix;
+    const a = d[i] + (d[i + 1] - d[i]) * tx;
+    const b = d[i + nx] + (d[i + nx + 1] - d[i + nx]) * tx;
+    return a + (b - a) * ty;
   }
-  const mesh={source:s.terrain,version:s.terrainVersion,field,cells,polygons,segments};
-  if(typeof s.terrain==='string')stringCache=mesh;else arrays.set(s.terrain,mesh);return mesh;
-}
-export function density(s,x,y){
-  if(x<10||x>4470||y>1270)return 1;if(y<10)return -1;
-  const mesh=terrainMesh(s),gx=clamp((x-10)/S,0,C-1.00001),gy=clamp((y-10)/S,0,R-1.00001),c=Math.floor(gx),r=Math.floor(gy),u=gx-c,v=gy-r;
-  const a=mesh.field[r*C+c],b=mesh.field[r*C+c+1],d=mesh.field[(r+1)*C+c],e=mesh.field[(r+1)*C+c+1];
-  return u>=v?a+(b-a)*u+(e-b)*v:a+(e-d)*u+(d-a)*v;
-}
-export function terrainContact(s,x,y,radius){
-  const mesh=terrainMesh(s),inside=density(s,x,y)>0,range=radius+(inside?50:2);
-  let best=null,bestD=Infinity;
-  const c0=clamp(Math.floor((x-range-10)/S),0,C-2),c1=clamp(Math.floor((x+range-10)/S),0,C-2),r0=clamp(Math.floor((y-range-10)/S),0,R-2),r1=clamp(Math.floor((y+range-10)/S),0,R-2);
-  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++)for(const edge of mesh.cells[r*(C-1)+c]){
-    const {a,b}=edge,dx=b.x-a.x,dy=b.y-a.y,t=clamp(((x-a.x)*dx+(y-a.y)*dy)/(dx*dx+dy*dy),0,1),qx=a.x+t*dx,qy=a.y+t*dy,d=Math.hypot(x-qx,y-qy);
-    if(d<bestD){bestD=d;best={...edge,qx,qy,d};}
+
+  solidAt(x, y) { return this.sampleDensity(x, y) > ISO; }
+
+  // Highest solid point at or below `fromY` in column x.
+  groundY(x, fromY = WORLD_HEIGHT - 0.5) {
+    for (let y = fromY; y > 0; y -= CELL / 2) {
+      if (this.solidAt(x, y)) {
+        let lo = y, hi = y + CELL / 2;
+        for (let k = 0; k < 8; k++) { const m = (lo + hi) / 2; if (this.solidAt(x, m)) lo = m; else hi = m; }
+        return lo;
+      }
+    }
+    return 0;
   }
-  if(!best||(!inside&&bestD>=radius))return null;
-  if(!inside&&bestD>1e-6){best.nx=(x-best.qx)/bestD;best.ny=(y-best.qy)/bestD;}
-  return {nx:best.nx,ny:best.ny,depth:inside?radius+bestD:radius-bestD};
-}
-export function terrainFloor(s,x,from=0,to=1280){
-  const mesh=terrainMesh(s),c=clamp(Math.floor((x-10)/S),0,C-2);let best=Infinity;
-  for(let r=clamp(Math.floor((from-10)/S),0,R-2);r<=clamp(Math.floor((to-10)/S),0,R-2);r++)for(const edge of mesh.cells[r*(C-1)+c]){
-    const {a,b,ny}=edge;if(ny>=-.05||x<Math.min(a.x,b.x)-.001||x>Math.max(a.x,b.x)+.001||Math.abs(b.x-a.x)<1e-6)continue;
-    const y=a.y+(b.y-a.y)*(x-a.x)/(b.x-a.x);if(y>=from-.01&&y<=to+.01)best=Math.min(best,y);
-  }return best;
+
+  // Remove soil around (x, y). Returns changed nodes and volume removed (m²).
+  dig(x, y, radius, strength, maxVolume) {
+    return this.#brush(x, y, radius, strength, maxVolume, -1, null);
+  }
+
+  // Add soil around (x, y). `blocked(wx, wy)` rejects nodes occupied by bodies.
+  fill(x, y, radius, strength, maxVolume, blocked) {
+    // Soil must be placed against existing ground.
+    const r = radius + CELL * 1.5;
+    let anchored = false;
+    const x0 = Math.max(0, Math.floor((x - r) / CELL)), x1 = Math.min(this.nx - 1, Math.ceil((x + r) / CELL));
+    const y0 = Math.max(0, Math.floor((y - r) / CELL)), y1 = Math.min(this.ny - 1, Math.ceil((y + r) / CELL));
+    for (let iy = y0; iy <= y1 && !anchored; iy++) for (let ix = x0; ix <= x1; ix++) {
+      const dx = ix * CELL - x, dy = iy * CELL - y;
+      if (dx * dx + dy * dy <= r * r && this.density[iy * this.nx + ix] > ISO) { anchored = true; break; }
+    }
+    if (!anchored) return { indices: [], values: [], volume: 0 };
+    return this.#brush(x, y, radius, strength, maxVolume, 1, blocked);
+  }
+
+  #brush(x, y, radius, strength, maxVolume, sign, blocked) {
+    const indices = [], values = [];
+    let volume = 0;
+    const perUnit = (CELL * CELL) / 255;
+    const x0 = Math.max(0, Math.floor((x - radius) / CELL)), x1 = Math.min(this.nx - 1, Math.ceil((x + radius) / CELL));
+    const y0 = Math.max(1, Math.floor((y - radius) / CELL)), y1 = Math.min(this.ny - 2, Math.ceil((y + radius) / CELL));
+    for (let iy = y0; iy <= y1; iy++) {
+      for (let ix = x0; ix <= x1; ix++) {
+        const wx = ix * CELL, wy = iy * CELL;
+        const dx = wx - x, dy = wy - y;
+        const q = (dx * dx + dy * dy) / (radius * radius);
+        if (q > 1) continue;
+        const i = iy * this.nx + ix;
+        if (sign < 0 && this.rock[i]) continue;
+        if (sign > 0 && blocked && blocked(wx, wy)) continue;
+        const old = this.density[i];
+        let delta = Math.round(strength * (1 - q));
+        if (sign < 0) delta = Math.min(delta, old); else delta = Math.min(delta, 255 - old);
+        const room = Math.floor((maxVolume - volume) / perUnit);
+        if (room <= 0) break;
+        delta = Math.min(delta, room);
+        if (delta <= 0) continue;
+        const v = old + sign * delta;
+        volume += delta * perUnit;
+        indices.push(i); values.push(v);
+      }
+    }
+    this.applyEdits(indices, values);
+    return { indices, values, volume };
+  }
+
+  applyEdits(indices, values) {
+    const { nx, density } = this;
+    for (let k = 0; k < indices.length; k++) {
+      const i = indices[k];
+      density[i] = values[k];
+      const ix = i % nx, iy = (i - ix) / nx;
+      for (let oy = -1; oy <= 0; oy++) for (let ox = -1; ox <= 0; ox++) {
+        const cx = Math.floor((ix + ox) / CHUNK), cy = Math.floor((iy + oy) / CHUNK);
+        if (cx >= 0 && cy >= 0 && cx < this.chunksX && cy < this.chunksY) this.chunkVersion[cy * this.chunksX + cx]++;
+      }
+    }
+  }
+
+  // Marching squares over one chunk.
+  //   fills:    Map<styleKey, number[][]> flat polygon point lists (CCW, y up)
+  //   segments: number[] [x1,y1,x2,y2,...] contour with solid on the left
+  //   styleKey: 'rock' or 'soil0'..'soil4' (strata by depth below original surface)
+  extractChunk(cx, cy) {
+    const fills = new Map();
+    const segments = [];
+    const { nx, density, rock } = this;
+    const gx0 = cx * CHUNK, gy0 = cy * CHUNK;
+    const gx1 = Math.min(gx0 + CHUNK, this.nx - 1), gy1 = Math.min(gy0 + CHUNK, this.ny - 1);
+    const push = (key, pts) => { let l = fills.get(key); if (!l) fills.set(key, (l = [])); l.push(pts); };
+
+    for (let ix = gx0; ix < gx1; ix++) {
+      let runKey = null, runStart = 0;
+      const flush = endY => { if (runKey !== null) { const x = ix * CELL, X = x + CELL, y = runStart * CELL, Y = endY * CELL; push(runKey, [x, y, X, y, X, Y, x, Y]); runKey = null; } };
+      for (let iy = gy0; iy < gy1; iy++) {
+        const bl = iy * nx + ix, br = bl + 1, tl = bl + nx, tr = tl + 1;
+        const dBL = density[bl], dBR = density[br], dTR = density[tr], dTL = density[tl];
+        const sBL = dBL > ISO, sBR = dBR > ISO, sTR = dTR > ISO, sTL = dTL > ISO;
+        const caseId = (sBL ? 1 : 0) | (sBR ? 2 : 0) | (sTR ? 4 : 0) | (sTL ? 8 : 0);
+        const key = this.#styleKey(ix, iy, rock[bl] | rock[br] | rock[tl] | rock[tr]);
+        if (caseId === 15) {
+          if (runKey !== key) { flush(iy); runKey = key; runStart = iy; }
+          continue;
+        }
+        flush(iy);
+        if (caseId === 0) continue;
+
+        const x = ix * CELL, y = iy * CELL, X = x + CELL, Y = y + CELL;
+        const lerp = (a, b) => (ISO - a) / (b - a);
+        // Crossings, always parameterised from the lower-index node.
+        const pB = sBL !== sBR ? [x + lerp(dBL, dBR) * CELL, y] : null;
+        const pR = sBR !== sTR ? [X, y + lerp(dBR, dTR) * CELL] : null;
+        const pT = sTL !== sTR ? [x + lerp(dTL, dTR) * CELL, Y] : null;
+        const pL = sBL !== sTL ? [x, y + lerp(dBL, dTL) * CELL] : null;
+
+        const saddle = caseId === 5 || caseId === 10;
+        if (saddle && (dBL + dBR + dTR + dTL) / 4 <= ISO) {
+          // Two separate corners: [corner, crossing on outgoing edge, crossing on incoming edge].
+          const tris = caseId === 5
+            ? [[[x, y], pB, pL], [[X, Y], pT, pR]]
+            : [[[X, y], pR, pB], [[x, Y], pL, pT]];
+          for (const [c, a, b] of tris) {
+            push(key, [c[0], c[1], a[0], a[1], b[0], b[1]]);
+            segments.push(a[0], a[1], b[0], b[1]);
+          }
+          continue;
+        }
+
+        const corners = [[x, y, sBL], [X, y, sBR], [X, Y, sTR], [x, Y, sTL]];
+        const crossings = [pB, pR, pT, pL];
+        const pts = [], isCross = [];
+        for (let k = 0; k < 4; k++) {
+          const c = corners[k];
+          if (c[2]) { pts.push(c[0], c[1]); isCross.push(false); }
+          if (crossings[k]) { pts.push(crossings[k][0], crossings[k][1]); isCross.push(true); }
+        }
+        push(key, pts);
+        const n = isCross.length;
+        for (let k = 0; k < n; k++) {
+          const k2 = (k + 1) % n;
+          if (isCross[k] && isCross[k2]) segments.push(pts[k * 2], pts[k * 2 + 1], pts[k2 * 2], pts[k2 * 2 + 1]);
+        }
+      }
+      flush(gy1);
+    }
+    return { fills, segments };
+  }
+
+  #styleKey(ix, iy, isRock) {
+    if (isRock) return 'rock';
+    const depth = this.surface[ix] - (iy + 0.5) * CELL + 0.35 * (noise1(ix * CELL / 3, this.seed + 5) - 0.5);
+    let b = 0;
+    while (b < SOIL_BANDS.length && depth > SOIL_BANDS[b]) b++;
+    return 'soil' + b;
+  }
 }
