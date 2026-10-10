@@ -38,7 +38,7 @@ const hud = {
     }
   },
   update({ prompt, soil, tipped, mass, players, myId, tool, tools, boards, boardCap, rack, lane, wet }) {
-    const bar = tools.map((t, k) => `<span class="slot${k === tool ? ' on' : ''}"><i>${k + 1}</i>${t}</span>`).join('');
+    const bar = tools.map((t, k) => `<span class="slot${k === tool ? ' on' : ''}${t.icon ? '' : ' empty'}"><i>${k + 1}</i>${t.icon ? `<img src="${t.icon}" alt="">` : ''}${t.name}</span>`).join('') + '<span class="slot bag"><i>Tab</i>Inventory</span>';
     if (bar !== this._bar) { $('toolbar').innerHTML = bar; this._bar = bar; }
     $('boards').textContent = `Boards ${boards}/${boardCap}`;
     $('rack').textContent = rack ? 'Rack: ' + rack : '';

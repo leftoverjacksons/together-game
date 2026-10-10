@@ -39,7 +39,7 @@ Design pillars:
     - **Forest lane:** just behind the road, for players only. Most trees stand here, so they are a resource rather than an obstacle; players don't have to fell everything in their way. The forest floor follows the generated ground and cannot be edited. Players step between lanes with **W / S**, and can haul logs from the forest out onto the road.
   - Occasional trees stand in the road lane as deliberate obstacles.
   - A **branching route graph**: at forks, players choose between segments (e.g. river valley vs. ridgeline). Each run is linear overall.
-  - The camper is drawn as a **dollhouse cross-section**: the interior and stations are visible while driving.
+  - The camper is drawn as a **dollhouse cross-section** when someone is on foot inside. **[Revised 2026-10-10]** Otherwise (everyone outside, or only the driver aboard) the near wall is shown, with windows and a door, and it fades away when someone walks inside.
 - Isometric was considered and rejected; the comparison is in §13.
 
 ---
@@ -61,6 +61,7 @@ Design pillars:
 ## 5. Failure and recovery
 
 - **[DECIDED]** Players can always recover. Failure costs time and effort, never the run.
+  - A camper counts as upright again once it is back on its wheels (within about 45°, even on a slope), and it can be boarded whenever it is roughly upright. (Fix 2026-10-10: a camper parked tilted on a hillside used to stay "tipped", which blocked the door.)
   - A tipped camper must be righted. This takes work: winch or jack effort, not a free button. It should be painful but possible.
   - Possible costs of a bad crash:
     - cargo spills and must be re-collected
@@ -94,6 +95,10 @@ Design pillars:
 
 ## 7. Players, tools and items
 
+- **[DECIDED 2026-10-10] Inventory panel (Tab / I):** tiles for your 3-slot pack, the camper's **storage** (12 tiles), the roof rack (boards and logs), and your partner's pack.
+  - Click to stow or take tools. Storage is reachable anywhere inside the camper, or on foot within about 2 m of it.
+  - You can put every tool away; nothing has to be left behind.
+  - Tools are shown with icons rendered from their in-game art.
 - **[DECIDED, built M3]** Each player carries **3 tool slots**. Starting loadouts: shovel, axe, hammer / shovel, saw, hammer. The camper's **toolbox** (an interior station) holds spares, starting with a saw and an axe, so one player can fetch whatever is missing.
   - Tools can be dropped (G), picked up from the ground (E), and handed to your partner (F).
   - **Finds** lie along the stretch, mostly in the forest: a **pickaxe** (breaks rock slowly; the rubble goes in the bucket) and a **jack** (pushing a tipped camper with it counts as three people). Starting loadout: shovel, axe, saw, hammer split between the two players (to be tuned; e.g. 3 + 3 with overlap).
@@ -134,7 +139,7 @@ Design pillars:
   - Candidate set pieces: gap/ravine, washed-out bank, boulder field, mud pit, fallen tree, river ford, cliff ledge, steep climb with winch anchors.
 - **[DECIDED] Slumping (soil settling):**
   - Soil that players have disturbed (dug, placed, or near a dig) settles over time. It falls when unsupported, and slides when steeper than its angle of repose. Jagged cuts soften into natural slopes.
-  - Dry soil settles slowly, to about 45°. In rain it settles fast, to about 27°, like a landslide.
+  - **Revised 2026-10-10 after play:** dry earthworks keep their shape. Only unsupported soil falls (for example a cave roof or floating fill). **Sliding happens only in rain**: disturbed soil runs down to about 27°, like a landslide. When rain starts, all loose soil wakes up.
   - Undisturbed ground (generated cliffs and ledges) stays put until someone digs near it.
   - Boards block soil from moving, so they can shore up a cut or hold a ramp.
 - **[OPEN]** Biomes: e.g. temperate forest, river valley, ridgeline, autumn hills.
@@ -299,4 +304,5 @@ Design pillars:
 | 2026-10-10 | Stiffer suspension and better approach angle. Disturbed soil slumps; rain speeds it up; boards stop it. |
 | 2026-10-10 | Synthesised sound effects. Log hauling: slow alone, faster with two. |
 | 2026-10-10 | Stay on the web stack; engine checkpoint (Godot?) after M4. Renderer becomes asset-driven; art test with generated art. |
+| 2026-10-10 | After play: dry soil no longer slides (rain only); inventory panel with camper storage; near wall shown unless someone is on foot inside; tilted campers can be boarded. |
 | 2026-10-10 | Pressure sources: storms (slick ground, slumping earthworks) and night (headlamps and headlights only). |

@@ -64,7 +64,7 @@ test('applyEdits reproduces server edits on a client copy', () => {
   assert.deepEqual(client.density, server.density);
 });
 
-test('dug walls slump: mass is conserved and wet soil settles flatter', () => {
+test('dug walls slump only in rain; mass is conserved', () => {
   const profile = wet => {
     const t = new Terrain(320, 11);
     const x = 30, g = t.groundY(x);
@@ -78,7 +78,8 @@ test('dug walls slump: mass is conserved and wet soil settles flatter', () => {
   };
   const dry = profile(false), wet = profile(true);
   assert.ok(dry.wall > 2, 'starts as a vertical wall');
-  assert.ok(dry.after < 0.7, `dry slope softened (${dry.after})`);
+  assert.ok(dry.after > 1.5, `dry walls keep their shape (${dry.after})`);
+  assert.ok(wet.after < 0.7, `rain softens the slope (${wet.after})`);
   assert.ok(wet.depth < dry.depth, 'wet soil fills the pit more');
 });
 
@@ -91,4 +92,15 @@ test('slumping cannot pass through a blocking board', () => {
   for (let k = 0; k < 800 && t.active.size; k++) t.slump(true, blocked);
   assert.ok(g - t.groundY(x + 1.2) < 0.3, 'soil behind the board stays up');
   assert.ok(g - t.groundY(x - 1.2) > 0.5, 'the unshored side slumps');
+});
+
+test('unsupported soil falls even when dry', () => {
+  const t = new Terrain(320, 11);
+  const x = 30, g = t.groundY(x);
+  // Dig a cave under the surface, leaving a thin roof.
+  for (let k = 0; k < 12; k++) t.dig(x + (k % 3 - 1) * 0.4, g - 1.0, 0.5, 200, 100);
+  const roofBefore = t.solidAt(x, g - 0.1);
+  for (let k = 0; k < 400 && t.active.size; k++) t.slump(false);
+  assert.ok(roofBefore);
+  assert.ok(!t.solidAt(x, g - 0.1) || t.solidAt(x, g - 1.0), 'the roof fell into the cave');
 });

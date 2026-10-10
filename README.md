@@ -10,7 +10,7 @@ Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md):
 - **Terrain:**
   - A procedural stretch with set pieces: ravines, hills, ledges, rock boulders, dips.
   - Editable terrain: dig soil into your bucket and place it to build ramps or fill gaps. Rock cannot be dug.
-  - Disturbed soil settles into natural slopes, much faster in rain. Boards stop it.
+  - Unsupported soil falls; in rain, dug and placed soil slides into natural slopes. Boards stop it.
 - **Camper:**
   - A physics vehicle with stiff suspension and four-wheel drive. Its interior is drawn as a cross-section.
   - It can be pushed upright when tipped.
@@ -28,7 +28,8 @@ Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md):
 - **Winch and tools (M3):**
   - A winch station inside the camper; a lone driver can winch from the wheel.
   - The hook goes from the front bumper to a tree, stump or rock.
-  - Three tool slots each; drop, pick up and hand over tools; a toolbox in the camper.
+  - Three tool slots each; drop, pick up and hand over tools.
+  - Inventory panel (Tab): your pack, 12 tiles of camper storage, the roof rack, your partner's pack.
   - Finds: a pickaxe (breaks rock) and a jack (one person pushes like three).
 
 Not yet: animals and rescue, real weather and night, camps and the sanctuary, local co-op on one machine. See the milestones in the design doc.
@@ -53,8 +54,9 @@ To test co-op on one computer, open the second player in a different browser or 
 | W / S | Step into the forest lane / back to the road. At the winch station: reel in / pay out |
 | Space | Jump. At the wheel: brake |
 | E | Use what is nearby: board the camper, stations (wheel, winch, toolbox), logs, boards, tools on the ground, roof rack; hold beside a tipped camper to push it upright |
-| Q | Winch hook: take it from the front bumper, hook it to a tree, stump or rock, unhook, stow. At the toolbox: next tool |
+| Q | Winch hook: take it from the front bumper, hook it to a tree, stump or rock, unhook, stow. |
 | 1–3 / mouse wheel | Choose a tool slot |
+| Tab / I | Inventory: your pack, camper storage, roof rack |
 | Left mouse | Dig · chop · saw · break rock (pickaxe) · drag to place a board |
 | Right mouse | Place soil (shovel) · remove a board (hammer) |
 | F | Hand your tool to your partner |
