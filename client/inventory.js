@@ -38,7 +38,49 @@ export class InventoryPanel {
       if (fn) fn(i);
     });
     el.addEventListener('contextmenu', e => e.preventDefault());
+    // Drag and drop: tiles carry { from: 'pack' | 'storage', i }.
+    el.addEventListener('dragstart', e => {
+      const t = e.target.closest('[data-drag]');
+      if (!t) return;
+      this.dragging = { from: t.dataset.drag, i: Number(t.dataset.i) };
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', t.dataset.drag + ':' + t.dataset.i);
+      t.classList.add('dragging');
+    });
+    el.addEventListener('dragend', () => { this.dragging = null; this.#clearHover(); this.key = ''; });
+    el.addEventListener('dragover', e => {
+      const zone = this.#zone(e.target);
+      if (!zone || !this.dragging) return;
+      e.preventDefault();
+      this.#clearHover();
+      zone.el.classList.add('hover');
+    });
+    el.addEventListener('dragleave', e => { if (!el.contains(e.relatedTarget)) this.#clearHover(); });
+    el.addEventListener('drop', e => {
+      const zone = this.#zone(e.target), d = this.dragging;
+      e.preventDefault();
+      this.#clearHover();
+      this.dragging = null;
+      this.key = '';
+      if (!zone || !d) return;
+      const A = this.actions;
+      if (d.from === 'pack') {
+        if (zone.kind === 'pack' && zone.i !== d.i) A.swapSlots(d.i, zone.i);
+        else if (zone.kind === 'storage') A.store(d.i);
+        else if (zone.kind === 'partner') A.giveSlot(d.i);
+        else if (zone.kind === 'ground') A.drop(d.i);
+      } else if (d.from === 'storage') {
+        if (zone.kind === 'pack') A.retrieveTo(d.i, zone.i);
+      }
+    });
   }
+
+  #zone(target) {
+    const z = target.closest?.('[data-zone]');
+    return z ? { el: z, kind: z.dataset.zone, i: Number(z.dataset.i) } : null;
+  }
+
+  #clearHover() { for (const h of this.el.querySelectorAll('.hover')) h.classList.remove('hover'); }
 
   toggle(force) {
     this.open = force ?? !this.open;
@@ -46,32 +88,35 @@ export class InventoryPanel {
     this.key = '';
   }
 
-  #tile(kind, { act, i, selected, disabled, key }) {
+  #tile(kind, { act, i, selected, disabled, key, drag, zone }) {
     const name = kind ? TOOL_NAMES[kind] : 'Empty';
-    const img = kind && this.icons[kind] ? `<img src="${this.icons[kind]}" alt="">` : '';
-    return `<button class="tile${selected ? ' on' : ''}${kind ? '' : ' empty'}" data-act="${act}" data-i="${i}" ${disabled || !kind && act !== 'select' ? 'disabled' : ''}>${img}<span>${name}</span>${key ? `<i>${key}</i>` : ''}</button>`;
+    const img = kind && this.icons[kind] ? `<img src="${this.icons[kind]}" alt="" draggable="false">` : '';
+    const dragAttr = drag && kind && !disabled ? `draggable="true" data-drag="${drag}"` : '';
+    const zoneAttr = zone ? `data-zone="${zone}"` : '';
+    return `<button class="tile${selected ? ' on' : ''}${kind ? '' : ' empty'}" data-act="${act}" data-i="${i}" ${dragAttr} ${zoneAttr} ${disabled || !kind && act !== 'select' ? 'disabled' : ''}>${img}<span>${name}</span>${key ? `<i>${key}</i>` : ''}</button>`;
   }
 
   // s: { tools, selected, storage, near, boards, boardCap, rack, partner: { name, tools, near } | null }
   update(s) {
-    if (!this.open) return;
+    if (!this.open || this.dragging) return;   // don't rebuild under a drag
     const key = JSON.stringify(s) + Object.keys(this.icons).length;
     if (key === this.key) return;
     this.key = key;
-    const pack = s.tools.map((k, i) => `<div class="slot">${this.#tile(k, { act: 'select', i, selected: i === s.selected, key: i + 1 })}
+    const pack = s.tools.map((k, i) => `<div class="slot">${this.#tile(k, { act: 'select', i, selected: i === s.selected, key: i + 1, drag: 'pack', zone: 'pack' })}
       <div class="slot-actions"><button data-act="store" data-i="${i}" ${!k || !s.near || s.storage.length >= TOOLBOX_SIZE ? 'disabled' : ''}>Stow</button><button data-act="drop" data-i="${i}" ${!k ? 'disabled' : ''}>Drop</button></div></div>`).join('');
-    const storage = Array.from({ length: TOOLBOX_SIZE }, (_, i) => this.#tile(s.storage[i] || null, { act: 'retrieve', i, disabled: !s.near }));
-    const partner = s.partner ? `<section><h3>${esc(s.partner.name)}'s pack</h3><div class="tiles">${s.partner.tools.map(k => this.#tile(k, { act: 'none', i: 0, disabled: true })).join('')}</div>
+    const storage = Array.from({ length: TOOLBOX_SIZE }, (_, i) => this.#tile(s.storage[i] || null, { act: 'retrieve', i, disabled: !s.near, drag: 'storage' }));
+    const partner = s.partner ? `<section ${s.partner.near ? 'data-zone="partner"' : ''}><h3>${esc(s.partner.name)}'s pack</h3><div class="tiles">${s.partner.tools.map(k => this.#tile(k, { act: 'none', i: 0, disabled: true })).join('')}</div>
       <button data-act="give" ${s.partner.near && s.tools[s.selected] && s.partner.tools.includes(null) ? '' : 'disabled'}>Hand over your ${s.tools[s.selected] ? TOOL_NAMES[s.tools[s.selected]].toLowerCase() : 'tool'}</button>
       ${s.partner.near ? '' : '<p class="hint">Stand next to them to hand things over.</p>'}</section>` : '';
     this.el.innerHTML = `
       <header><h2>Inventory</h2><button data-act="close">Close (Tab)</button></header>
       <div class="inv-body">
         <section><h3>Your pack</h3><div class="tiles pack">${pack}</div>
+          <div class="ground" data-zone="ground">${s.inside ? 'Drag here to put it in storage' : 'Drag here to drop it on the ground'}</div>
           <p>Boards on your back: ${s.boards}/${s.boardCap} <button data-act="stowBoards" ${s.near && s.boards ? '' : 'disabled'}>Stow on the rack</button></p></section>
-        <section><h3>Camper storage</h3><div class="tiles grid">${storage.join('')}</div>
+        <section><h3>Camper storage</h3><div class="tiles grid" ${s.near ? 'data-zone="storage"' : ''}>${storage.join('')}</div>
           <p>Roof rack: ${s.rack.boards} boards · ${s.rack.logs} logs <button data-act="takeBoards" ${s.near && s.rack.boards && s.boards < s.boardCap ? '' : 'disabled'}>Take boards</button></p>
-          <p class="hint">${s.near ? 'Click a tool to take it. If your pack is full, it swaps with the tool in your hand.' : 'Get inside or close to the camper to use its storage.'}</p></section>
+          <p class="hint">${s.near ? 'Drag tools between your pack and the camper, or click one to take it.' : 'Get inside or close to the camper to use its storage.'}</p></section>
         ${partner}
       </div>`;
   }

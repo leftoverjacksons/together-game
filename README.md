@@ -1,11 +1,11 @@
 # Together
 
-Two-player co-op in the browser: drive a big off-road camper through procedural wilderness, reshape the ground to get it through, and (soon) rescue animals along the way.
+Two-player co-op in the browser: drive a big off-road camper through procedural wilderness, reshape the ground to get it through, and rescue animals along the way.
 
 The design lives in [`docs/DESIGN.md`](docs/DESIGN.md). Update it when decisions change.
 Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md): drop images into `public/assets/` and list them in `manifest.json` to replace the code-drawn placeholders.
 
-## Status: milestone 3 (timber, building, winch and tools)
+## Status: milestone 4 (animals, first pass)
 
 - **Terrain:**
   - A procedural stretch with set pieces: ravines, hills, ledges, rock boulders, dips.
@@ -31,8 +31,12 @@ Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md):
   - Three tool slots each; drop, pick up and hand over tools.
   - Inventory panel (Tab): your pack, 12 tiles of camper storage, the roof rack, your partner's pack.
   - Finds: a pickaxe (breaks rock) and a jack (one person pushes like three).
+- **Animals (M4):**
+  - A dog near the start becomes your companion and sniffs out animals in trouble.
+  - Rabbits, chipmunks, songbirds and foxes need rescuing (dig, saw, untangle, unsnare) and then ride in the camper.
+  - The deer, hawk, moose and bear walk or fly alongside and pull, lift or push when the camper struggles.
 
-Not yet: animals and rescue, real weather and night, camps and the sanctuary, local co-op on one machine. See the milestones in the design doc.
+Not yet: real weather and night, camps and the sanctuary, local co-op on one machine. See the milestones in the design doc.
 
 ## Run locally
 
@@ -53,7 +57,7 @@ To test co-op on one computer, open the second player in a different browser or 
 | A / D | Walk. At the wheel: drive forward / reverse |
 | W / S | Step into the forest lane / back to the road. At the winch station: reel in / pay out |
 | Space | Jump. At the wheel: brake |
-| E | Use what is nearby: board the camper, stations (wheel, winch, toolbox), logs, boards, tools on the ground, roof rack; hold beside a tipped camper to push it upright |
+| E | Use what is nearby (hold it to rescue an animal): board the camper, stations (wheel, winch, toolbox), logs, boards, tools on the ground, roof rack; hold beside a tipped camper to push it upright |
 | Q | Winch hook: take it from the front bumper, hook it to a tree, stump or rock, unhook, stow. |
 | 1–3 / mouse wheel | Choose a tool slot |
 | Tab / I | Inventory: your pack, camper storage, roof rack |

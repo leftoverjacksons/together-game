@@ -166,8 +166,26 @@ Design pillars:
   - splint an injured leg
   - dig it out of a collapsed burrow
   - coax it down from a ledge with a board ramp
-- Large helpers add real mass, so each one is a trade-off.
-- **[OPEN]** Whether helpers act automatically when the camper stalls, or when called (a whistle).
+- Large helpers travel **on foot or on the wing** beside the camper, so they don't add mass. Small animals ride inside and add a little; the trade-off with weight comes mainly from cargo. *(Revised 2026-10-10 while building M4.)*
+
+### First pass (M4, built 2026-10-10)
+| Animal | Rescue | After rescue |
+|---|---|---|
+| Dog (near the start) | Hold E to make friends | Companion: follows the nearest traveller, rides when the camper drives, runs to animals in trouble within 35 m and barks |
+| Rabbit | Trapped in a collapsed burrow (a soil mound): dig it out | Rides in the camper |
+| Chipmunk | Pinned under a fallen branch (a real log): saw it or haul it away | Rides |
+| Songbird | Tangled in brambles: hold E | Rides |
+| Fox | Leg in a snare: hold E | Rides |
+| Deer | Caught in old fence wire: hold E (faster together) | Walks along; **pulls** on ropes at the front bumper |
+| Hawk | Injured wing: carry it to the camper | Flies above; **lifts** from the roof on climbs |
+| Moose | Stuck in mud: hold E (faster together) | Walks along; **pushes** from behind |
+| Bear | Paw in a trap: hold E (slowest; faster together) | Walks along; **pushes** hard |
+
+- Helpers act automatically when the camper **struggles** (someone is driving with throttle but the camper is barely moving for more than about 0.6 s).
+- Each helper has stamina: about 10 s of help, then roughly 20 s of rest, so they assist rather than carry the game.
+- Forces: deer 9 kN pull, hawk 8 kN lift, moose 12 kN push, bear 15 kN push. In testing, a bear gets an overloaded camper up a hill it stalls on alone. Pushing can't lift the camper up a vertical ledge; that still needs a ramp or the winch.
+- The rescued count is shown in the HUD; a banner says when animals are helping.
+- **[DECIDED for now]** Helpers act automatically when the camper stalls. A whistle to call them may come later.
 - **[OPEN]** Care needs while aboard (food or calm) as a light pressure source.
 
 ---
@@ -279,7 +297,7 @@ Design pillars:
 1. **M1 — Core loop:** camper physics on procedural terrain; dig and fill; two players online; board and drive. *(First pass done 2026-10-10.)*
 2. **M2 — Timber and building:** handling fix, slumping, forest lane with trees, tool slots, felling, hauling, sawing, roof rack, structural boards, sound effects, visual detail pass. *(First pass done 2026-10-10.)*
 3. **M3 — Winch, items and finds, dropping and handing items, cargo mass.** *(First pass done 2026-10-10.)*
-4. M4 — Animals: rescue interactions, small animals as the score, large animals as helpers.
+4. **M4 — Animals: rescue interactions, small animals as the score, large animals as helpers.** *(First pass done 2026-10-10.)* → **Engine checkpoint next** (see §12).
 5. M5 — Stretches, camps, sanctuary, meta-progression.
 6. M6 — Local co-op and gamepad support.
 7. Throughout — art, ambience, audio.
@@ -305,4 +323,5 @@ Design pillars:
 | 2026-10-10 | Synthesised sound effects. Log hauling: slow alone, faster with two. |
 | 2026-10-10 | Stay on the web stack; engine checkpoint (Godot?) after M4. Renderer becomes asset-driven; art test with generated art. |
 | 2026-10-10 | After play: dry soil no longer slides (rain only); inventory panel with camper storage; near wall shown unless someone is on foot inside; tilted campers can be boarded. |
+| 2026-10-10 | Inventory drag and drop. M4 first pass: nine animals with rescue scenes; small animals ride; dog companion; deer/hawk/moose/bear help when the camper struggles. |
 | 2026-10-10 | Pressure sources: storms (slick ground, slumping earthworks) and night (headlamps and headlights only). |

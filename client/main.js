@@ -3,7 +3,10 @@ import { OnlineSession, LocalSession } from './session.js';
 import { Audio } from './audio.js';
 
 const audio = new Audio();
-addEventListener('pointerdown', () => { if (audio.ctx?.state === 'suspended') audio.ctx.resume(); });
+// Browsers can suspend audio (tab switches, focus loss); resume on any interaction.
+const resumeAudio = () => { if (audio.ctx && audio.ctx.state !== 'running') audio.ctx.resume(); };
+for (const ev of ['pointerdown', 'keydown', 'focus']) addEventListener(ev, resumeAudio);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeAudio(); });
 
 const $ = id => document.getElementById(id);
 const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
@@ -37,7 +40,10 @@ const hud = {
       history.replaceState(null, '', '?trip=' + code);
     }
   },
-  update({ prompt, soil, tipped, mass, players, myId, tool, tools, boards, boardCap, rack, lane, wet }) {
+  update({ prompt, soil, tipped, mass, players, myId, tool, tools, boards, boardCap, rack, lane, wet, rescued, helping }) {
+    $('rescued').textContent = `Animals rescued: ${rescued}`;
+    const help = helping && helping.length ? `Your ${[...new Set(helping)].join(' and ')} ${helping.length > 1 ? 'are' : 'is'} helping!` : '';
+    if (help !== this._help) { $('helping').textContent = help; $('helping').hidden = !help; this._help = help; }
     const bar = tools.map((t, k) => `<span class="slot${k === tool ? ' on' : ''}${t.icon ? '' : ' empty'}"><i>${k + 1}</i>${t.icon ? `<img src="${t.icon}" alt="">` : ''}${t.name}</span>`).join('') + '<span class="slot bag"><i>Tab</i>Inventory</span>';
     if (bar !== this._bar) { $('toolbar').innerHTML = bar; this._bar = bar; }
     $('boards').textContent = `Boards ${boards}/${boardCap}`;

@@ -17,6 +17,8 @@ import { AvatarView } from './render/avatarView.js';
 import { ForestView, LumberView } from './render/forestView.js';
 import { StructureView } from './render/structureView.js';
 import { ItemsView } from './render/itemsView.js';
+import { AnimalView } from './render/animalView.js';
+import { ANIMALS, RIDE_SPOTS, RESCUE_RANGE } from '../shared/animals.mjs';
 import { Ambience } from './render/ambience.js';
 import { Particles } from './render/particles.js';
 import { PAL } from './render/palette.js';
@@ -56,8 +58,9 @@ export class Game {
     const send = msg => this.session.send(msg);
     this.inventory = new InventoryPanel(document.getElementById('inventory'), {
       select: i => this.#selectTool(i), store: i => send({ t: 'store', slot: i }), retrieve: i => send({ t: 'retrieve', index: i }),
-      drop: i => { this.#selectTool(i); send({ t: 'tool', i }); send({ t: 'droptool' }); }, give: () => send({ t: 'give' }),
+      drop: i => send({ t: 'droptool', slot: i }), give: () => send({ t: 'give' }),
       stowBoards: () => send({ t: 'stowBoards' }), takeBoards: () => send({ t: 'takeBoards' }), close: () => this.inventory.toggle(false),
+      swapSlots: (a, b) => send({ t: 'swapSlots', a, b }), retrieveTo: (i, slot) => send({ t: 'retrieve', index: i, slot }), giveSlot: i => send({ t: 'give', slot: i }),
     });
     this.toolIcons = await makeToolIcons(app.renderer);
     this.inventory.icons = this.toolIcons;
@@ -79,10 +82,14 @@ export class Game {
     this.terrainView = new TerrainView(this.world, this.terrain);
     this.camperView = new CamperView(this.world);
     this.structureView = new StructureView(this.world);
+    this.animalsRoad = new Container();        // under road logs, so a pinned chipmunk peeks out
+    this.world.addChild(this.animalsRoad);
+    this.animalFx = new Graphics();            // helper ropes and talons
+    this.animalViews = new Map();
     this.itemsForest = new ItemsView(this.forestView.items);
     this.itemsRoad = new ItemsView(this.world);
     this.cable = new Graphics();
-    this.world.addChild(this.cable);
+    this.world.addChild(this.cable, this.animalFx);
     this.roadLumber = new LumberView(this.world);
     this.outside = new Container();
     this.world.addChild(this.outside);
@@ -121,7 +128,10 @@ export class Game {
       }
       case 'terrain': this.terrain?.applyEdits(msg.i, msg.v); break;
       case 'notice': if (msg.to === this.myId) this.hud.toast(msg.msg); break;
-      case 'fx': if (msg.kind === 'snap') this.audio?.snap(this.cam.x); break;
+      case 'fx':
+        if (msg.kind === 'snap') this.audio?.snap(this.cam.x);
+        if (msg.kind === 'rescued') this.#onRescued(msg);
+        break;
       case 'snap': {
         this.#updateColliders(msg.structure);
         this.snaps.push({ time: performance.now(), s: msg });
@@ -151,8 +161,13 @@ export class Game {
       if (!la || la.lane !== lb.lane) return lb;
       return { ...lb, x: lerp(la.x, lb.x, t), y: lerp(la.y, lb.y, t), a: lerpAngle(la.a, lb.a, t) };
     });
+    const animals = (b.s.animals || []).map(nb => {
+      const na = (a.s.animals || []).find(o => o.id === nb.id);
+      if (!na || na.state !== nb.state || na.lane !== nb.lane) return nb;
+      return { ...nb, x: lerp(na.x, nb.x, t), y: lerp(na.y, nb.y, t) };
+    });
     const tick = a.s.tick + (b.s.tick - a.s.tick) * t;
-    return { camper, players, logs, tick, tipped: b.s.tipped, driver: b.s.driver, latest: S[S.length - 1].s };
+    return { camper, players, logs, animals, tick, tipped: b.s.tipped, driver: b.s.driver, latest: S[S.length - 1].s };
   }
 
   // Boards are solid for travellers on foot, alongside the terrain.
@@ -232,16 +247,20 @@ export class Game {
       if (eHit && ctx.action) ctx.action();
       const push = !!ctx.push && inp.held('e');
       if (push !== this.pushing) { this.pushing = push; this.session.send({ t: 'push', on: push }); }
+      const rescuing = !!ctx.rescue && inp.held('e');
+      if (rescuing !== this.rescuing) { this.rescuing = rescuing; this.session.send({ t: 'rescue', on: rescuing }); }
+      if (rescuing) working = true;
       if (inp.hit('g') && this.myTool) this.session.send({ t: 'droptool' });
       if (inp.hit('b') && latestMe?.boards) this.session.send({ t: 'drop' });
       const hook = this.#hookContext(view);
       if (hook.prompt && !prompt) prompt = hook.prompt;
       if (inp.hit('q') && hook.ok) this.session.send({ t: 'hook' });
       const used = this.#tools(now, view, latestMe);
-      working = used.working;
+      working = working || used.working;
       if (!prompt && used.hint) prompt = used.hint;
     } else {
       if (this.pushing) { this.pushing = false; this.session.send({ t: 'push', on: false }); }
+      if (this.rescuing) { this.rescuing = false; this.session.send({ t: 'rescue', on: false }); }
       const move = (inp.held('d', 'arrowright') ? 1 : 0) - (inp.held('a', 'arrowleft') ? 1 : 0);
       const winch = latest.winch || {};
       const alone = latest.players.filter(p => p.connected).length < 2;
@@ -304,7 +323,7 @@ export class Game {
       const pa = partner?.a;
       const partnerNear = !!partner && partner.connected && pa.mode === me.mode && (me.mode === 'in' ? Math.abs(pa.lx - me.lx) < GIVE_RANGE : (pa.lane || 0) === (me.lane || 0) && Math.hypot(pa.x - me.x, pa.y - me.y) < GIVE_RANGE);
       this.inventory.update({
-        tools: latestMe?.tools || [], selected: this.tool, storage: latest.toolbox || [], near: this.#nearCamper(c),
+        tools: latestMe?.tools || [], selected: this.tool, storage: latest.toolbox || [], near: this.#nearCamper(c), inside: me.mode === 'in',
         boards: latestMe?.boards || 0, boardCap: BOARD_CARRY, rack: { boards: latest.rack?.boards || 0, logs: latest.rack?.logs.length || 0 },
         partner: partner ? { name: partner.name, tools: partner.tools || [], near: partnerNear } : null,
       });
@@ -314,6 +333,7 @@ export class Game {
       tool: this.tool, tools: Array.from({ length: TOOL_SLOTS }, (_, k) => { const kind = latestMe?.tools?.[k]; return { name: kind ? TOOL_NAMES[kind] : 'Empty', icon: kind ? this.toolIcons?.[kind] : '' }; }), boards: latestMe?.boards || 0, boardCap: BOARD_CARRY,
       rack: latest.rack ? `${latest.rack.boards}/${RACK_BOARDS} boards · ${latest.rack.logs.length}/${RACK_LOGS} logs` : '',
       lane: me.mode === 'out' ? (me.lane === 1 ? 'Forest' : 'Road') : 'Camper', wet: latest.wet,
+      rescued: latest.rescued || 0, helping: (latest.animals || []).filter(a => a.help).map(a => a.kind),
     });
     inp.endFrame();
   }
@@ -343,6 +363,16 @@ export class Game {
     if (lane === 0 && (latestMe?.boards || 0) < BOARD_CARRY) {
       const deb = (latest.structure?.d || []).find(d => Math.hypot(d[1] - me.x, d[2] - me.y - 0.5) < WORK_RANGE + 0.4);
       if (deb) return { prompt: '<b>E</b> salvage the broken board', action: send({ t: 'salvage', id: deb[0] }) };
+    }
+    const carriedAnimal = (latest.animals || []).find(a => a.state === 'carried' && a.carrier === this.myId);
+    if (carriedAnimal) return { prompt: `Carry the ${carriedAnimal.kind} to the camper · <b>E</b> put it down`, action: send({ t: 'carryAnimal', id: carriedAnimal.id }) };
+    const animal = (view.animals || []).find(a => a.state === 'waiting' && a.lane === lane && Math.abs(a.x - me.x) < RESCUE_RANGE);
+    if (animal) {
+      const def = ANIMALS[animal.kind];
+      if (def.rescue === 'free') return { prompt: `Hold <b>E</b> to ${def.verb}${animal.p > 0 ? ` · ${Math.round(animal.p * 100)}%` : ''}${def.size === 'large' ? ' · faster together' : ''}`, rescue: true };
+      if (def.rescue === 'carry') return { prompt: `<b>E</b> pick up the injured ${animal.kind}`, action: send({ t: 'carryAnimal', id: animal.id }) };
+      if (def.rescue === 'dig') return { prompt: `Dig the rabbit out of its collapsed burrow with the <b>shovel</b>` };
+      if (def.rescue === 'saw') return { prompt: `Saw the branch pinning the chipmunk, or haul it away` };
     }
     const item = (latest.items || []).find(it => it.lane === lane && Math.abs(it.x - me.x) < ITEM_RANGE);
     if (item) {
@@ -611,6 +641,48 @@ export class Game {
     }
   }
 
+  #renderAnimals(view) {
+    const fx = this.animalFx.clear(), c = view.camper, me = this.me;
+    const meX = me.mode === 'in' ? c.x : me.x;
+    for (const a of view.animals || []) {
+      let v = this.animalViews.get(a.id);
+      if (!v) { v = new AnimalView(a.kind); this.animalViews.set(a.id, v); }
+      const def = ANIMALS[a.kind];
+      const riding = a.state === 'riding' || a.state === 'riding-dog';
+      const parent = riding ? this.camperView.interior : a.lane === 1 && a.kind !== 'hawk' ? this.forestView.actors : this.animalsRoad;
+      if (v.root.parent !== parent) parent.addChild(v.root);
+      if (Math.abs(a.x - this.cam.x) > 60 && !riding) { v.root.visible = false; continue; }
+      v.root.visible = true;
+      const pos = riding ? (a.state === 'riding-dog' ? { x: -1.75, y: INTERIOR.floorY } : { x: RIDE_SPOTS[Math.max(0, a.spot)][0], y: RIDE_SPOTS[Math.max(0, a.spot)][1] }) : { x: a.x, y: a.y };
+      const lastBark = this.barks?.get(a.id) || 0;
+      if (a.bark && a.bark !== lastBark) { (this.barks = this.barks || new Map()).set(a.id, a.bark); this.audio?.bark(a.x); this.barkUntil = this.time + 0.6; }
+      v.root.scale.set(!riding && a.lane === 1 && a.kind !== 'hawk' ? 0.9 : 1);
+      v.update({ ...a, ...pos, barking: a.kind === 'dog' && this.time < (this.barkUntil || 0) }, this.time, def, {
+        groundY: def.rescue === 'dig' ? this.terrain.groundY(a.x, a.y + 3) : 0,
+        near: a.state === 'waiting' && Math.abs(a.x - meX) < 18,
+      });
+      // Helpers: deer pull on ropes to the bumper; the hawk grips the roof.
+      if (a.help && a.kind === 'deer') {
+        const wp = this.#camperPoint(c, WINCH.x, WINCH.y + 0.4);
+        fx.moveTo(a.x + 0.4 * -a.f, a.y + 1.0).lineTo(wp.x, wp.y).stroke({ width: 0.035, color: 0xc9a876 });
+      }
+      if (a.help && a.kind === 'hawk') {
+        const roof = this.#camperPoint(c, 1.2, 2.3);
+        fx.moveTo(a.x, a.y + 0.1).lineTo(roof.x, roof.y).stroke({ width: 0.02, color: 0xe8b53c });
+      }
+    }
+  }
+
+  #onRescued(msg) {
+    const def = ANIMALS[msg.animal];
+    const name = msg.animal;
+    const text = def.size === 'dog' ? 'The dog decides you are friends. It will sniff out animals in trouble.'
+      : def.size === 'large' ? `You rescued the ${name}! It will walk with you and help when the camper struggles.`
+      : `You rescued the ${name}! It hops into the camper.`;
+    this.hud.toast(text);
+    this.audio?.chime();
+  }
+
   // Winch cable from the bumper to the hook: straight when taut, sagging when slack.
   #drawCable(view) {
     const g = this.cable.clear(), w = view.latest.winch, c = view.camper;
@@ -700,6 +772,7 @@ export class Game {
       });
     });
     for (const [id, v] of this.views) if (!view.players.some(p => p.id === id)) { v.root.destroy({ children: true }); this.views.delete(id); }
+    this.#renderAnimals(view);
 
     // Shovel brush cursor.
     this.cursor.clear();
