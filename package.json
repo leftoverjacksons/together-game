@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Two-player co-op: drive an off-road camper through the wilderness and rescue animals along the way.",
   "scripts": {
+    "prebuild": "node scripts/ensure-deps.mjs",
     "build": "node scripts/build.mjs",
     "start": "node server/index.mjs",
     "dev": "node scripts/build.mjs --watch & node --watch server/index.mjs",
@@ -17,9 +18,7 @@
   "dependencies": {
     "pixi.js": "^8.22.0",
     "planck": "^1.5.0",
-    "ws": "^8.18.3"
-  },
-  "devDependencies": {
+    "ws": "^8.18.3",
     "esbuild": "^0.25.10"
   }
 }
