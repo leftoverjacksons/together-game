@@ -10,10 +10,13 @@ import { newAvatar } from './character.mjs';
 
 export const CAMPER = {
   // Chassis outline (local metres, y up). Wheels hang below.
-  hull: [[-3.2, -0.75], [2.9, -0.75], [3.35, 0.05], [3.1, 1.85], [-3.2, 1.85]],
-  wheelR: 0.68,
-  wheelX: [-2.05, 2.05],
-  wheelY: -1.05,
+  // Raked nose and tail so the camper rides up onto obstacles instead of catching.
+  hull: [[-2.95, -0.62], [2.65, -0.62], [3.35, 0.2], [3.1, 1.85], [-3.2, 1.85], [-3.3, -0.05]],
+  wheelR: 0.72,
+  wheelX: [-2.25, 2.25],
+  wheelY: -1.2,
+  springHz: 5.2,
+  springDamping: 0.85,
   maxSpeed: 12,       // wheel rad/s
   torque: 5600,       // per wheel, N·m
   brakeTorque: 9000,
@@ -21,6 +24,7 @@ export const CAMPER = {
 };
 const ACTIVE_RANGE = 44;          // metres around the camper with collision built
 const DIG_STRENGTH = 70, FILL_STRENGTH = 70;
+const SLUMP_EVERY = 6;           // ticks between settling passes (10 Hz)
 const PUSH_SPIN = 0.45, PUSH_RANGE = 4.8;   // rad/s per pusher
 const round = v => Math.round(v * 1000) / 1000;
 
@@ -46,14 +50,14 @@ export class Sim {
   #createCamper(x) {
     const g = this.terrain.groundY(x);
     const y = g - CAMPER.wheelY + CAMPER.wheelR + 0.15;
-    const chassis = this.world.createBody({ type: 'dynamic', position: Vec2(x, y), angularDamping: 0.25 });
+    const chassis = this.world.createBody({ type: 'dynamic', position: Vec2(x, y), angularDamping: 0.5 });
     chassis.createFixture(new Polygon(CAMPER.hull.map(([a, b]) => Vec2(a, b))), { density: 145, friction: 0.55 });
     const wheels = [], joints = [];
     for (const wx of CAMPER.wheelX) {
       const wheel = this.world.createBody({ type: 'dynamic', position: Vec2(x + wx, y + CAMPER.wheelY), angularDamping: 0.4 });
       wheel.createFixture(new Circle(CAMPER.wheelR), { density: 70, friction: 1.25, restitution: 0.05 });
       const joint = this.world.createJoint(new WheelJoint({
-        enableMotor: true, motorSpeed: 0, maxMotorTorque: CAMPER.idleTorque, frequencyHz: 3.2, dampingRatio: 0.65,
+        enableMotor: true, motorSpeed: 0, maxMotorTorque: CAMPER.idleTorque, frequencyHz: CAMPER.springHz, dampingRatio: CAMPER.springDamping,
       }, chassis, wheel, wheel.getPosition(), Vec2(0, 1)));
       wheels.push(wheel); joints.push(joint);
     }
@@ -94,6 +98,7 @@ export class Sim {
     c.wheels.forEach((w, k) => w.setTransform(Vec2(x + CAMPER.wheelX[k], y + CAMPER.wheelY), 0));
     for (const b of [c.chassis, ...c.wheels]) { b.setLinearVelocity(Vec2(0, 0)); b.setAngularVelocity(0); b.setAwake(true); }
     this.tippedFor = 0;
+    this.tipped = false;
     this.#syncTerrainBodies();
   }
 
@@ -162,6 +167,7 @@ export class Sim {
         break;
       }
       case 'push': p.pushing = msg.on === true; break;
+      case 'weather': this.wet = msg.wet === true; break;   // temporary toggle until weather exists
       case 'dig':
       case 'fill': this.#tool(p, msg); break;
     }
@@ -220,8 +226,11 @@ export class Sim {
     const ch = c.chassis;
     const ang = Math.atan2(Math.sin(ch.getAngle()), Math.cos(ch.getAngle()));
     const upright = Math.cos(ang);
-    if (upright < 0.15 && Math.abs(ch.getAngularVelocity()) < 1.5) this.tippedFor += dt; else if (upright > 0.6) this.tippedFor = 0;
-    this.tipped = this.tippedFor > 1.0;
+    // Tipped once it has lain over for a second; cleared only when nearly upright,
+    // so pushing continues until the camper is back on its wheels.
+    if (upright < 0.15 && Math.abs(ch.getAngularVelocity()) < 1.5) this.tippedFor += dt;
+    if (this.tippedFor > 1.0) this.tipped = true;
+    if (upright > 0.92) { this.tippedFor = 0; this.tipped = false; }
     let pushers = 0;
     const pos = ch.getPosition();
     for (const p of this.players.values()) {
@@ -240,6 +249,11 @@ export class Sim {
     this.world.step(dt, 8, 3);
     if (this.tick % 15 === 0) this.#syncTerrainBodies();
 
+    if (this.tick % SLUMP_EVERY === 0 && this.terrain.active.size) {
+      const r = this.terrain.slump(this.wet, this.slumpBlocked);
+      for (let k = 0; k < r.indices.length; k++) { this.edits.set(r.indices[k], r.values[k]); this.pendingEdits.set(r.indices[k], r.values[k]); }
+    }
+
     if (this.pendingEdits.size) {
       this.outbox.push({ t: 'terrain', i: [...this.pendingEdits.keys()], v: [...this.pendingEdits.values()] });
       this.pendingEdits.clear();
@@ -254,7 +268,7 @@ export class Sim {
     return {
       t: 'snap', tick: this.tick,
       c: { x: round(p.x), y: round(p.y), a: round(ch.getAngle()), vx: round(v.x), vy: round(v.y), w, th: c.throttle, mass: Math.round(this.camperMass()) },
-      tipped: this.tipped, driver: d ? d.id : null,
+      tipped: this.tipped, driver: d ? d.id : null, wet: this.wet,
       players: [...this.players.values()].map(q => ({
         id: q.id, name: q.name, seat: q.seat, soil: round(q.soil), pushing: q.pushing, connected: q.connected,
         a: { mode: q.avatar.mode, x: round(q.avatar.x), y: round(q.avatar.y), vx: round(q.avatar.vx), vy: round(q.avatar.vy), facing: q.avatar.facing, lx: round(q.avatar.lx), onGround: q.avatar.onGround, walkPhase: round(q.avatar.walkPhase) },

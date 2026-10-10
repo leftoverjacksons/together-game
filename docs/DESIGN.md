@@ -34,7 +34,10 @@ Design pillars:
 ## 3. Dimensionality
 
 - **[DECIDED]** A 2D side-view physics plane, rendered with parallax depth.
-  - A **walkable background lane for players only**: they can step "into the trees" to gather resources, find items or reach animals, while the camper stays on the main plane.
+  - Two walkable lanes:
+    - **Road lane:** the camper's plane. Editable terrain, physics, building.
+    - **Forest lane:** just behind the road, for players only. Most trees stand here, so they are a resource rather than an obstacle; players don't have to fell everything in their way. The forest floor follows the generated ground and cannot be edited. Players step between lanes with **W / S**, and can haul logs from the forest out onto the road.
+  - Occasional trees stand in the road lane as deliberate obstacles.
   - A **branching route graph**: at forks, players choose between segments (e.g. river valley vs. ridgeline). Each run is linear overall.
   - The camper is drawn as a **dollhouse cross-section**: the interior and stations are visible while driving.
 - Isometric was considered and rejected; the comparison is in §13.
@@ -70,28 +73,50 @@ Design pillars:
 ## 6. The camper
 
 - Physics vehicle: a chassis on suspended wheels, with real mass.
+- **Handling [DECIDED 2026-10-10]:** M1 felt floaty and the nose caught on things too easily. Changes:
+  - stiffer suspension
+  - more ground clearance
+  - a raked (angled-back) front so the camper climbs onto obstacles instead of ramming them
 - Stations, operated from inside (Lovers-style):
   - **Cab:** throttle, brake. Possibly low/high range.
   - **Winch:** front-mounted, anchors to trees and rocks, tension-only cable.
   - **Roof crane / arm:** lifts logs and boards into place.
-  - **Cargo hold:** visibly stores soil, logs, lumber and found items. Contents add mass.
   - **Animal deck:** rescued animals ride here and add mass.
+- **[DECIDED] Roof rack:** stores lumber (boards and whole logs) where it can be seen. Everything stored adds mass. Players stow or take items while standing at the rear ladder.
 - **[OPEN]** Fuel or energy resource: yes or no.
-- **[OPEN]** Upgrade tree, e.g. suspension, winch strength, crane reach, hold size.
+- **[OPEN]** Upgrade tree, e.g. suspension, winch strength, crane reach, rack size.
 
 ---
 
 ## 7. Players, tools and items
 
-- Each player has a small loadout of **2–3 slots**.
-- Starting tools: shovel, axe, saw, hammer (the final starting set is open).
+- Each player carries **3 tool slots**, chosen from: shovel, axe, saw, hammer. Starting loadout: shovel, axe, saw, hammer split between the two players (to be tuned; e.g. 3 + 3 with overlap).
+  - Number keys switch tools.
 - Possible finds: rope, jack, lantern, bucket, pickaxe, seeds.
 - Items can be **dropped**, **handed to the other player**, or **stored in the camper**.
+- **Carrying:** soil in a bucket (up to 4 m²), and up to 4 boards on your back.
 
 ### Material chain
-- Tree → (axe) → log → (saw) → boards → (hammer) → plank bridge / ramp / platform
-- Soil: dig → carry (bucket or hold) → place, to build ramps or fill gaps
+- Tree → (axe) → log → (saw) → boards → (hammer) → structures
+- **Felling:** hold the axe on a trunk. Two players chopping finish faster.
+- **[DECIDED] Hauling:** one player can drag a log slowly; two players carry it quickly.
+- Logs can go on the roof rack, be sawn where they lie, or be dragged onto the road to use as a ramp or crossing.
+- Soil: dig → carry → place, to build ramps or fill gaps.
 - Rock: **[OPEN]** breakable with a pickaxe? usable as an anchor or fill?
+
+### Building **[DECIDED]**
+- Structures are made of **boards** (up to about 3 m each). Each board connects two **joints**.
+  - Joints snap together when placed close to each other.
+  - A joint touching solid ground becomes an **anchor**. Anchors are pinned: they can rotate but not move.
+- **Limited structural physics:**
+  - The structure is analysed as a 2D frame. Boards resist stretching and squashing well, and bending poorly.
+  - Loads: the boards' own weight, players standing on them, and the camper's contact forces.
+  - A board that is overstressed for a moment breaks and falls as debris.
+  - A part that is not held in place (e.g. a board sticking out from a single anchor) collapses.
+  - Result: long unsupported spans and cantilevers fail, while triangulated trusses and propped spans hold. Building is a small engineering puzzle, not just rows of boards.
+- Boards are rigid surfaces for the camper and the players while they hold.
+- **Boards also stop slumping:** soil cannot slide through a board, so boards double as retaining walls (§8).
+- Broken boards can be picked up again.
 
 ---
 
@@ -101,32 +126,37 @@ Design pillars:
 - **Editable**: dig and fill on a density grid. Smooth contours are produced by marching squares. Tunnels and overhangs are allowed.
 - Generation = seeded noise plus a library of **challenge set pieces** stitched together, with difficulty scaling along the stretch. Each set piece is validated as solvable with the tools available.
   - Candidate set pieces: gap/ravine, washed-out bank, boulder field, mud pit, fallen tree, river ford, cliff ledge, steep climb with winch anchors.
+- **[DECIDED] Slumping (soil settling):**
+  - Soil that players have disturbed (dug, placed, or near a dig) settles over time. It falls when unsupported, and slides when steeper than its angle of repose. Jagged cuts soften into natural slopes.
+  - Dry soil settles slowly, to about 45°. In rain it settles fast, to about 27°, like a landslide.
+  - Undisturbed ground (generated cliffs and ledges) stays put until someone digs near it.
+  - Boards block soil from moving, so they can shore up a cut or hold a ramp.
 - **[OPEN]** Biomes: e.g. temperate forest, river valley, ridgeline, autumn hills.
 
 ---
 
 ## 9. Animals
 
-**[DECIDED]** Animals are companions with simple behaviour, not static cargo. They ride in the camper, hop out when it stops, wander near the players, follow when the camper moves, and help in specific situations. Each adds mass to the camper.
+**[DECIDED]** Two kinds of animals:
 
-- **Dog** — found early in the first stretch and stays for the whole game (it is not delivered to the sanctuary).
-- Rescuable: rabbit, chipmunk, deer, fox, hawk, bear.
-- Rescued animals (all except the dog) are delivered to the sanctuary at camp.
+- **Small animals are the score.** Rabbits, chipmunks, squirrels, songbirds and the like are counted as rescued. They are visible riding in the camper, and add only a little mass. They are delivered to the sanctuary at camp.
+- **Large animals are helpers.** They travel with you and act when the camper struggles:
 
-### Initial bonuses **[LEANING]** — to be tuned in play
+| Animal | How it helps |
+|---|---|
+| Hawk / eagle (birds of prey) | Swoop down when the camper struggles up a hill and help lift it |
+| Deer | Walk alongside; grab ropes at the front of the camper and pull it over obstacles |
+| Moose | Push from behind |
+| Bear | Pushes hard from behind; can also help right a tipped camper |
 
-| Animal | Mass | Helps by | Trigger |
-|---|---|---|---|
-| Dog | Light | Sniffs out buried items and nearby animals; barks before slope collapse | Passive; points or barks |
-| Rabbit | Very light | Loosens soil: digging near it is faster | When players dig nearby |
-| Chipmunk | Very light | Gathers small spilled items and loose cargo back into the hold | After a spill or crash |
-| Deer | Medium | Senses unstable ground: highlights soil that is likely to slump | Storms, fresh earthworks |
-| Fox | Light | Night vision: scouts ahead at night, revealing terrain in a faint light | Night |
-| Hawk | Light | Scouts the route: previews the next fork and extends how far the camera sees ahead | Called, with a cooldown |
-| Bear | Very heavy | Shoves logs and boulders; helps right a tipped camper | Called; big mass penalty |
-
-- **[OPEN]** How players call an animal to help (a "whistle" action vs. purely contextual).
-- **[OPEN]** Rescue interactions per animal (e.g. free from a snare, coax with food, carry).
+- **Dog:** found early in the first stretch and stays for the whole game. It is a companion (sniffs out animals and items), not delivered to the sanctuary.
+- **Rescue requires leaving the camper and helping the animal.** This is how you come to collect it. Examples:
+  - free it from a snare or fallen branch
+  - splint an injured leg
+  - dig it out of a collapsed burrow
+  - coax it down from a ledge with a board ramp
+- Large helpers add real mass, so each one is a trade-off.
+- **[OPEN]** Whether helpers act automatically when the camper stalls, or when called (a whistle).
 - **[OPEN]** Care needs while aboard (food or calm) as a light pressure source.
 
 ---
@@ -137,7 +167,7 @@ Design pillars:
 
 - **Storms**
   - Rain lowers traction on soil and wet boards.
-  - **Slumping:** disturbed soil (anything dug or placed) slides when its slope is steeper than its angle of repose. Storms lower that angle, so fresh ramps and cut banks sag over time. Native, undisturbed soil stays stable, except in heavy storms.
+  - **Slumping:** see §8. Rain makes disturbed soil settle much faster and to a shallower angle, so fresh ramps and cut banks slide. Heavy storms may also loosen undisturbed ground near the surface.
   - Boards placed as shoring (a retaining wall) stop slumping. This gives building a second use.
 - **Night**
   - Darkness. Players see only what is lit by their headlamps, the camper's headlights, and the lantern at the camper. The fox adds faint night vision.
@@ -153,6 +183,13 @@ Design pillars:
   - Lighting: a global colour grade driven by time of day. Golden hour by default. At night, cool blue, contrasted with the camper's warm lantern light.
   - Life: fireflies, pollen, birds, butterflies, swaying grass, small ambient animals.
 - **[OPEN]** Asset production: shapes drawn in code, hand-authored SVG, or a mix.
+
+---
+
+## 11b. Audio
+
+- **[DECIDED]** Sound effects are synthesised in the browser (Web Audio API) at first, so there are no asset files: digging, chopping, sawing, hammering, the engine, creaks and snaps, footsteps, birdsong and wind.
+- **[OPEN]** Recorded ambience and music later, from free (Creative Commons) libraries.
 
 ---
 
@@ -207,9 +244,9 @@ Design pillars:
 ## 14. Milestones
 
 1. **M1 — Core loop:** camper physics on procedural terrain; dig and fill; two players online; board and drive. *(First pass done 2026-10-10.)*
-2. M2 — Winch, timber, saw, boards, building.
-3. M3 — Items, loadouts, handoff, cargo hold with mass.
-4. M4 — Animals and rescue.
+2. **M2 — Timber and building:** handling fix, slumping, forest lane with trees, tool slots, felling, hauling, sawing, roof rack, structural boards, sound effects, visual detail pass. *(In progress 2026-10-10.)*
+3. M3 — Winch, items and finds, dropping and handing items, cargo mass.
+4. M4 — Animals: rescue interactions, small animals as the score, large animals as helpers.
 5. M5 — Stretches, camps, sanctuary, meta-progression.
 6. M6 — Local co-op and gamepad support.
 7. Throughout — art, ambience, audio.
@@ -228,4 +265,9 @@ Design pillars:
 | 2026-10-10 | Stretch / camp / sanctuary structure confirmed. |
 | 2026-10-10 | Dog found early, stays all game. Rescuable: rabbit, chipmunk, deer, fox, hawk, bear. Animals follow and help, not static cargo. |
 | 2026-10-10 | M1 tech: planck.js, PixiJS 8, esbuild; client-owned avatars, server-owned camper and terrain. |
+| 2026-10-10 | Forest lane behind the road holds most trees; lumber stored on the roof rack. |
+| 2026-10-10 | Building uses limited structural physics: boards on joints, frame analysis, unsupported parts fail. |
+| 2026-10-10 | Small animals are the score; large animals help (birds of prey lift, deer pull, moose and bear push). Rescue means getting out to help the animal. |
+| 2026-10-10 | Stiffer suspension and better approach angle. Disturbed soil slumps; rain speeds it up; boards stop it. |
+| 2026-10-10 | Synthesised sound effects. Log hauling: slow alone, faster with two. |
 | 2026-10-10 | Pressure sources: storms (slick ground, slumping earthworks) and night (headlamps and headlights only). |

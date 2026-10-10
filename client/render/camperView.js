@@ -48,7 +48,7 @@ export class CamperView {
     const b = this.back, f = this.front;
     const floor = INTERIOR.floorY;
     // Interior back wall (warm wood) inside the hull.
-    b.poly([-3.05, -0.62, 2.8, -0.62, 3.2, 0.06, 2.95, 1.7, -3.05, 1.7]).fill(PAL.wood);
+    b.poly([-2.85, -0.5, 2.6, -0.5, 3.2, 0.22, 2.95, 1.7, -3.05, 1.7, -3.15, -0.05]).fill(PAL.wood);
     for (let y = floor + 0.35; y < 1.7; y += 0.32) b.moveTo(-3.05, y).lineTo(2.2, y);
     b.stroke({ width: 0.025, color: PAL.woodDark, alpha: 0.5 });
     // Rear window with a view, curtains.
@@ -76,7 +76,7 @@ export class CamperView {
     b.moveTo(2.55, floor + 0.85).lineTo(2.4, floor + 1.15).stroke({ width: 0.06, color: 0x3a3030 });
     b.ellipse(2.38, floor + 1.18, 0.07, 0.24).stroke({ width: 0.06, color: 0x3a3030 });
     // Windshield.
-    b.poly([2.55, 0.25, 3.25, 0.12, 3.05, 1.55, 2.55, 1.55]).fill({ color: PAL.glass, alpha: 0.85 });
+    b.poly([2.6, 0.35, 3.22, 0.3, 3.03, 1.55, 2.6, 1.55]).fill({ color: PAL.glass, alpha: 0.85 });
     // Floor.
     b.rect(-3.05, floor - 0.27, 6.2, 0.27).fill(PAL.woodDark);
     b.moveTo(-3.05, floor).lineTo(3.0, floor).stroke({ width: 0.05, color: PAL.woodLight });
@@ -94,13 +94,13 @@ export class CamperView {
     f.rect(-3.0, 2.2, 5.6, 0.06).fill(0x4a4440);                              // roof rack
     f.roundRect(-2.6, 2.26, 1.6, 0.36, 0.06).fill(0x8d6b46);                  // stowed crate
     f.roundRect(-0.8, 2.26, 1.0, 0.3, 0.06).fill(0x6d8a5a);
-    f.rect(-3.3, -0.95, 6.7, 0.3).fill(PAL.bodyShade);                        // underbody skirt
-    f.rect(-3.3, -0.8, 6.7, 0.1).fill(PAL.stripe);
-    f.rect(-3.3, -0.62, 0.18, 2.4).fill(PAL.body);                            // rear pillar
-    f.rect(2.42, -0.62, 0.16, 2.4).fill(PAL.body);                            // B pillar
-    f.roundRect(3.2, -0.95, 0.4, 0.42, 0.08).fill(0x5a5450);                  // front bumper / winch mount
-    f.circle(3.25, -0.05, 0.13).fill(PAL.lamp);                               // headlight
-    f.rect(-3.42, 0.0, 0.14, 0.25).fill(0xd24b3f);                            // taillight
+    f.poly([-2.95, -0.62, 2.65, -0.62, 2.82, -0.42, -3.12, -0.42]).fill(PAL.bodyShade); // underbody skirt
+    f.rect(-2.9, -0.56, 5.6, 0.08).fill(PAL.stripe);
+    f.rect(-3.32, -0.05, 0.18, 1.9).fill(PAL.body);                           // rear pillar
+    f.rect(2.42, -0.55, 0.16, 2.4).fill(PAL.body);                            // B pillar
+    f.roundRect(3.05, -0.2, 0.42, 0.36, 0.08).fill(0x5a5450);                 // bumper / winch mount
+    f.circle(3.32, 0.5, 0.13).fill(PAL.lamp);                                 // headlight
+    f.rect(-3.42, 0.25, 0.14, 0.25).fill(0xd24b3f);                           // taillight
   }
 
   // camper: interpolated {x, y, a, w: [x, y, a, x, y, a]}
@@ -114,7 +114,7 @@ export class CamperView {
       const wx = c.w[k * 3], wy = c.w[k * 3 + 1];
       this.wheels[k].position.set(wx, wy);
       this.wheels[k].rotation = c.w[k * 3 + 2];
-      const ax = c.x + CAMPER.wheelX[k] * ca - (-0.7) * sa, ay = c.y + CAMPER.wheelX[k] * sa + (-0.7) * ca;
+      const ax = c.x + CAMPER.wheelX[k] * ca - (-0.55) * sa, ay = c.y + CAMPER.wheelX[k] * sa + (-0.55) * ca;
       this.arms.moveTo(ax, ay).lineTo(wx, wy);
     }
     this.arms.stroke({ width: 0.16, color: 0x3d3633 });

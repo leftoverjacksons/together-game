@@ -126,6 +126,7 @@ export class Game {
 
     const door = this.#camperPoint(c, INTERIOR.doorX, INTERIOR.floorY);
     const eHit = inp.hit('e');
+    if (inp.hit('r')) this.session.send({ t: 'weather', wet: !view.latest.wet });
     if (me.mode === 'out') {
       const move = (inp.held('d', 'arrowright') ? 1 : 0) - (inp.held('a', 'arrowleft') ? 1 : 0);
       stepAvatar(me, this.terrain, { move, jump: inp.held('w', ' ', 'arrowup') }, dt, c.x);

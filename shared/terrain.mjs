@@ -7,6 +7,8 @@ import { mulberry32, fbm1, noise1 } from './rng.mjs';
 
 export const ISO = 127.5;
 const SOIL_BANDS = [0.4, 1.1, 1.9, 2.9];   // strata depth thresholds (metres)
+const LOOSEN_MARGIN = 0.8;                  // digging loosens soil this far beyond the brush
+const SLUMP_RATE_DRY = 8, SLUMP_RATE_WET = 40;   // density moved per pass
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -19,6 +21,8 @@ export class Terrain {
     this.ny = Math.round(WORLD_HEIGHT / CELL) + 1;
     this.density = new Uint8Array(this.nx * this.ny);
     this.rock = new Uint8Array(this.nx * this.ny);
+    this.loose = new Uint8Array(this.nx * this.ny);   // disturbed soil that can slump
+    this.active = new Set();                          // loose nodes that may still move
     this.surface = new Float32Array(this.nx);   // generated surface height per column
     this.rockTop = new Float32Array(this.nx);   // generated top of undiggable rock per column
     this.chunksX = Math.ceil((this.nx - 1) / CHUNK);
@@ -188,7 +192,78 @@ export class Terrain {
       }
     }
     this.applyEdits(indices, values);
+    if (volume > 0) this.loosen(x, y, radius + LOOSEN_MARGIN);
     return { indices, values, volume };
+  }
+
+  // Mark soil around a disturbance as loose so it can settle.
+  loosen(x, y, radius) {
+    const x0 = Math.max(1, Math.floor((x - radius) / CELL)), x1 = Math.min(this.nx - 2, Math.ceil((x + radius) / CELL));
+    const y0 = Math.max(1, Math.floor((y - radius) / CELL)), y1 = Math.min(this.ny - 2, Math.ceil((y + radius) / CELL));
+    for (let iy = y0; iy <= y1; iy++) for (let ix = x0; ix <= x1; ix++) {
+      const dx = ix * CELL - x, dy = iy * CELL - y;
+      if (dx * dx + dy * dy > radius * radius) continue;
+      const i = iy * this.nx + ix;
+      if (this.rock[i]) continue;
+      this.loose[i] = 1;
+      this.active.add(i);
+    }
+  }
+
+  // One settling pass over active loose soil. Loose soil falls into space
+  // below it, then slides diagonally while steeper than its angle of repose
+  // (45° dry; about 27° wet, reaching two cells across). `blocked(ax, ay, bx, by)`
+  // vetoes moves that would pass through a board. Returns the changed nodes.
+  slump(wet, blocked, budget = 6000) {
+    const { nx, density: d, rock, loose } = this;
+    const rate = wet ? SLUMP_RATE_WET : SLUMP_RATE_DRY;
+    const reach = wet ? 2 : 1;
+    const changed = new Map();
+    const next = new Set();
+    const nodes = [...this.active];
+    this.active.clear();
+    // Bottom-up so a column settles in one pass.
+    nodes.sort((a, b) => a - b);
+    this.slumpTick = (this.slumpTick || 0) + 1;
+    const move = (from, to, amount) => {
+      d[from] -= amount; d[to] += amount;
+      loose[to] = 1;
+      changed.set(from, d[from]); changed.set(to, d[to]);
+      for (const n of [from, to]) for (const o of [0, -1, 1, -nx, nx, -nx - 1, -nx + 1, nx - 1, nx + 1, -2, 2, nx - 2, nx + 2]) {
+        const j = n + o;
+        if (j > nx && j < d.length - nx && loose[j]) next.add(j);
+      }
+    };
+    let work = 0;
+    for (const i of nodes) {
+      if (++work > budget) { next.add(i); continue; }
+      if (!loose[i] || rock[i] || d[i] === 0) continue;
+      const ix = i % nx, iy = (i - ix) / nx;
+      if (iy < 1 || ix < reach || ix >= nx - reach) continue;
+      const wx = ix * CELL, wy = iy * CELL;
+      // Fall.
+      const below = i - nx;
+      if (!rock[below] && d[below] < 255 && !(blocked && blocked(wx, wy, wx, wy - CELL))) {
+        move(i, below, Math.min(d[i], 255 - d[below], rate * 2));
+        continue;
+      }
+      // Slide, only from the exposed surface.
+      if (d[i + nx] > ISO) continue;
+      const first = (ix + this.slumpTick) & 1 ? 1 : -1;
+      for (const s of [first, -first]) {
+        const side = i + s;
+        const target = i - nx + s * reach;
+        if (d[side] > ISO || rock[target] || d[target] >= 255) continue;
+        if (reach === 2 && d[i + s] > ISO) continue;
+        if (blocked && blocked(wx, wy, wx + s * reach * CELL, wy - CELL)) continue;
+        move(i, target, Math.min(d[i], 255 - d[target], rate));
+        break;
+      }
+    }
+    this.active = next;
+    const indices = [...changed.keys()];
+    if (indices.length) this.applyEdits(indices, indices.map(k => d[k]));
+    return { indices, values: indices.map(k => d[k]) };
   }
 
   applyEdits(indices, values) {
