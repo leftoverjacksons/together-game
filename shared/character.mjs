@@ -30,7 +30,7 @@ export function stepAvatar(a, t, input, dt, camperX) {
   const move = Math.max(-1, Math.min(1, input.move || 0));
   if (move) a.facing = move > 0 ? 1 : -1;
   const target = move * (input.speed ?? WALK);
-  const acc = a.onGround ? ACCEL : AIR_ACCEL;
+  const acc = (a.onGround ? ACCEL : AIR_ACCEL) * (input.grip ?? 1);
   const dv = target - a.vx;
   a.vx += Math.sign(dv) * Math.min(Math.abs(dv), acc * dt);
   if (input.jump && a.onGround) { a.vy = JUMP; a.onGround = false; }
@@ -90,7 +90,7 @@ export function stepForest(a, floorY, input, dt, camperX) {
   const move = Math.max(-1, Math.min(1, input.move || 0));
   if (move) a.facing = move > 0 ? 1 : -1;
   const dv = move * (input.speed ?? WALK) - a.vx;
-  a.vx += Math.sign(dv) * Math.min(Math.abs(dv), (a.onGround ? ACCEL : AIR_ACCEL) * dt);
+  a.vx += Math.sign(dv) * Math.min(Math.abs(dv), (a.onGround ? ACCEL : AIR_ACCEL) * (input.grip ?? 1) * dt);
   if (input.jump && a.onGround) { a.vy = JUMP; a.onGround = false; }
   a.vy = Math.max(MAX_FALL, a.vy + GRAV * dt);
   a.x += a.vx * dt;

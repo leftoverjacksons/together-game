@@ -192,7 +192,17 @@ Design pillars:
 
 ## 10. Pressure sources
 
-**[DECIDED]** Two pressure sources to start with:
+**[DECIDED]** Two pressure sources to start with. **[Built 2026-10-10, first pass]** (`shared/weather.mjs`, `client/render/lighting.js`):
+- **Day cycle:** 12 minutes in total, made of day, about 1 minute of dusk, about 3 minutes of night, and dawn. Stars and a moon come out on clear nights.
+- **Storms:** they arrive on their own every 5–9 minutes and last 1.5–3 minutes. They build up over about 15 s and fade over about 20 s.
+  - While a storm is heavy (intensity above 0.3): loose soil slides, tyre grip drops by up to 45%, and footing gets slippery.
+  - Lightning and thunder come in the heaviest part.
+- **Lighting:** a half-resolution lightmap is multiplied over the scene. Light sources:
+  - player headlamps (a glow plus a beam in the facing direction)
+  - the camper's headlight beam, its lantern and window glow, and the taillight
+  - fireflies on clear nights
+  - a rescued fox's night vision: a faint glow ahead of the camper
+- **Testing keys:** R forces a storm; N skips to the next dusk or dawn.
 
 - **Storms**
   - Rain lowers traction on soil and wet boards.
@@ -268,8 +278,7 @@ Design pillars:
 
 ### Known limitations
 - On-foot travellers do not collide with the camper, and cannot stand on it.
-- The camper's mass changes with roof-rack cargo only, so far. Animals will add more.
-- Rain is a manual toggle (R) until weather exists.
+- The camper's mass changes with roof-rack cargo and with the small animals riding inside; large helpers add none.
 - Unsupported structures get a 6 s grace period ("shaky") so they can be braced. This is a deliberate gameplay concession.
 - Only trees in the forest lane exist so far. Trees standing in the road lane as obstacles are planned.
 
@@ -325,4 +334,5 @@ Design pillars:
 | 2026-10-10 | After play: dry soil no longer slides (rain only); inventory panel with camper storage; near wall shown unless someone is on foot inside; tilted campers can be boarded. |
 | 2026-10-10 | Inventory drag and drop. M4 first pass: nine animals with rescue scenes; small animals ride; dog companion; deer/hawk/moose/bear help when the camper struggles. |
 | 2026-10-10 | The dog is a border collie; it boards and leaves the camper with the travellers. |
+| 2026-10-10 | Night and storms first pass: day cycle, automatic storms (slick tyres and footing, slumping, lightning), lightmap with headlamps, headlights, lantern, fireflies and fox night vision. |
 | 2026-10-10 | Pressure sources: storms (slick ground, slumping earthworks) and night (headlamps and headlights only). |

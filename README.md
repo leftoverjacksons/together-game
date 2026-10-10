@@ -5,7 +5,7 @@ Two-player co-op in the browser: drive a big off-road camper through procedural 
 The design lives in [`docs/DESIGN.md`](docs/DESIGN.md). Update it when decisions change.
 Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md): drop images into `public/assets/` and list them in `manifest.json` to replace the code-drawn placeholders.
 
-## Status: milestone 4 (animals, first pass)
+## Status: milestone 4 (animals) plus night and storms
 
 - **Terrain:**
   - A procedural stretch with set pieces: ravines, hills, ledges, rock boulders, dips.
@@ -36,7 +36,11 @@ Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md):
   - Rabbits, chipmunks, songbirds and foxes need rescuing (dig, saw, untangle, unsnare) and then ride in the camper.
   - The deer, hawk, moose and bear walk or fly alongside and pull, lift or push when the camper struggles.
 
-Not yet: real weather and night, camps and the sanctuary, local co-op on one machine. See the milestones in the design doc.
+- **Night and storms:**
+  - A 12-minute day with dusk, night (headlamps, headlights, lantern, fireflies) and dawn.
+  - Storms roll in on their own: slick tyres and footing, sliding soil, lightning and thunder.
+
+Not yet: camps and the sanctuary, local co-op on one machine. See the milestones in the design doc.
 
 ## Run locally
 
@@ -65,7 +69,8 @@ To test co-op on one computer, open the second player in a different browser or 
 | Right mouse | Place soil (shovel) · remove a board (hammer) |
 | F | Hand your tool to your partner |
 | G / B | Drop your tool / drop carried boards |
-| R | Toggle rain (testing) |
+| R | Start or stop a storm (testing) |
+| N | Skip to the next dusk or dawn (testing) |
 | M | Sound on / off |
 | H | Controls panel |
 

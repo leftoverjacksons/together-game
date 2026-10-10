@@ -24,7 +24,12 @@ export class Ambience {
     });
   }
 
-  update(dt, time, w, h, camX, ground) {
+  update(dt, time, w, h, camX, ground, { day = 1, storm = 0 } = {}) {
+    // Birds and butterflies keep to daylight and fair weather; pollen fades in the rain.
+    const fair = day * (1 - storm);
+    this.birds.alpha = fair;
+    this.butterflyLayer.visible = fair > 0.3;
+    this.pollen.alpha = 1 - storm;
     const g = this.pollen.clear();
     for (const m of this.motes) {
       m.x += dt * 0.006 * m.d; m.y -= dt * 0.004 * m.d;

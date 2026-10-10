@@ -143,8 +143,10 @@ export class Background {
 
   // refY: ground height near the camera; each layer's horizon tracks it with
   // its own vertical parallax so the silhouettes sit just behind the terrain.
-  update(camX, camY, ppm, refY, time = 0) {
+  update(camX, camY, ppm, refY, time = 0, day = 1) {
     const { w, h } = this;
+    this.sunGlow.alpha = day;
+    this.clouds.alpha = 0.4 + 0.6 * day;
     this.#drawClouds(camX, time);
     this.sunGlow.position.set(w * 0.3 - camX * ppm * 0.003, h * 0.3 + (camY - refY) * ppm * 0.05);
     for (const L of this.layers) {
