@@ -128,6 +128,27 @@ export class TerrainView {
       rim.poly([x - 0.07, y, x - 0.12, y + tall * 0.8, x - 0.02, y + 0.02, x + 0.02, y + tall, x + 0.06, y, x + 0.12, y + tall * 0.7, x + 0.09, y]);
     }
     rim.fill(PAL.grassLight);
+    // Flowers, mushrooms and pebbles on undisturbed grass (digging removes them).
+    for (let k = 0; k < grassSegs.length; k += 4) {
+      const ax = grassSegs[k], ay = grassSegs[k + 1];
+      const h = hash1(Math.round(ax * 53) + 7, t.seed);
+      if (h > 0.16) continue;
+      const kind = Math.floor(hash1(Math.round(ax * 31), t.seed + 3) * 5);
+      if (kind <= 1) {
+        const tall = 0.22 + h * 1.2, col = [0xf2d15c, 0xf4f0e6, 0xd97a9a, 0xb49be0][Math.floor(h * 25) % 4];
+        rim.moveTo(ax, ay).lineTo(ax + 0.03, ay + tall).stroke({ width: 0.025, color: PAL.grassDark });
+        for (let p = 0; p < 5; p++) rim.circle(ax + 0.03 + Math.cos(p * 1.26) * 0.05, ay + tall + Math.sin(p * 1.26) * 0.05, 0.035);
+        rim.fill(col);
+        rim.circle(ax + 0.03, ay + tall, 0.025).fill(0xe8a33c);
+      } else if (kind === 2) {
+        rim.rect(ax - 0.02, ay, 0.04, 0.1).fill(0xf1e6d0);
+        rim.ellipse(ax, ay + 0.11, 0.08, 0.045).fill(0xc2563f);
+        rim.circle(ax - 0.03, ay + 0.125, 0.012).circle(ax + 0.025, ay + 0.12, 0.01).fill(0xfff4e0);
+      } else if (kind === 3) {
+        rim.ellipse(ax, ay + 0.03, 0.12, 0.07).fill(0x8b8590);
+        rim.ellipse(ax - 0.03, ay + 0.05, 0.06, 0.03).fill({ color: 0xffffff, alpha: 0.18 });
+      }
+    }
     this.chunks.set(id, { shape, rim, version: t.chunkVersion[id] });
   }
 }

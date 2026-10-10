@@ -14,6 +14,7 @@ import { AvatarView } from './render/avatarView.js';
 import { ForestView, LumberView } from './render/forestView.js';
 import { StructureView } from './render/structureView.js';
 import { Ambience } from './render/ambience.js';
+import { Particles } from './render/particles.js';
 import { PAL } from './render/palette.js';
 
 const INTERP_DELAY = 110;          // ms behind the newest snapshot
@@ -72,10 +73,13 @@ export class Game {
     this.world.addChild(this.terrainView.grass);   // grass rim over feet and wheels
     this.screenFx = new Container();
     this.ambience = new Ambience(this.screenFx, this.world, seed);
+    this.particles = new Particles(this.world);
     this.cursor = new Graphics();
     this.world.addChild(this.cursor);
     this.fg = new Foreground(stage, length, seed);
-    stage.addChild(this.screenFx);
+    this.weather = new Graphics();
+    stage.addChild(this.weather, this.screenFx);
+    this.rainDrops = Array.from({ length: 160 }, () => ({ x: Math.random(), y: Math.random(), s: 0.6 + Math.random() * 0.8 }));
     const resize = () => this.bg.resize(this.app.screen.width, this.app.screen.height);
     resize();
     this.app.renderer.on('resize', resize);
@@ -447,7 +451,60 @@ export class Game {
     }
   }
 
+  // Rain: a cool grade over the scene and slanting streaks.
+  #weather(dt, w, h, wet) {
+    this.rainAmt = (this.rainAmt || 0) + ((wet ? 1 : 0) - (this.rainAmt || 0)) * Math.min(1, dt * 0.8);
+    const g = this.weather.clear();
+    if (this.rainAmt < 0.01) return;
+    g.rect(0, 0, w, h).fill({ color: 0x5d6f86, alpha: 0.22 * this.rainAmt });
+    for (const d of this.rainDrops) {
+      d.y += dt * 1.6 * d.s; d.x -= dt * 0.25 * d.s;
+      if (d.y > 1) { d.y -= 1; d.x = Math.random() * 1.2; }
+      if (d.x < -0.1) d.x += 1.2;
+      const x = d.x * w, y = d.y * h, L = 18 * d.s;
+      g.moveTo(x, y).lineTo(x - L * 0.25, y + L);
+    }
+    g.stroke({ width: 1.2, color: 0xdfe8f2, alpha: 0.45 * this.rainAmt });
+  }
+
+  // Particles for work done by anyone: driven by the same cues as sounds.
+  #effects(view) {
+    const P = this.particles, now = this.time;
+    this.fx = this.fx || { last: new Map(), dust: 0, fallen: null };
+    const F = this.fx;
+    for (const p of view.players) {
+      const a = p.id === this.myId ? this.me : p.a;
+      const working = p.id === this.myId ? this.workingNow : p.a.working;
+      if (!working || a.mode !== 'out') continue;
+      const tool = TOOLS[p.id === this.myId ? this.tool : p.tool];
+      const last = F.last.get(p.id) || 0;
+      if (now - last < 0.18) continue;
+      F.last.set(p.id, now);
+      const hx = a.x + (a.facing || 1) * 0.6, hy = a.y + 0.4;
+      if (tool === 'shovel' && p.id === this.myId) { const m = this.#mouseWorld(); P.burst(m.x, m.y, 'dirt', 4); }
+      else if (tool === 'shovel') P.burst(hx, a.y + 0.1, 'dirt', 3);
+      else if (tool === 'axe') P.burst(hx, a.y + 1.0, 'chips', 3, -(a.facing || 1) * 0.6);
+      else if (tool === 'saw') P.burst(hx, a.y + 0.4, 'sawdust', 4);
+    }
+    const fallen = new Set((view.latest.trees || []).filter(t => t[1] <= 0).map(t => t[0]));
+    if (F.fallen) for (const id of fallen) if (!F.fallen.has(id)) {
+      const tr = this.trees.find(t => t.id === id);
+      if (tr) setTimeout(() => P.burst(tr.x + (view.latest.trees.find(t => t[0] === id)?.[2] || 1) * tr.height * 0.5, floorAt(this.floor, tr.x) + 0.3, 'leaves', 18), 1100);
+    }
+    F.fallen = fallen;
+    // Dust behind the wheels when the camper moves on dry ground.
+    const c = view.camper;
+    if (!view.latest.wet && Math.abs(c.vx) > 2 && now - F.dust > 0.08) {
+      F.dust = now;
+      for (let k = 0; k < 2; k++) {
+        const wx = c.w[k * 3], wy = c.w[k * 3 + 1];
+        if (wy - 0.72 - this.terrain.groundY(wx, wy) < 0.25) P.burst(wx - Math.sign(c.vx) * 0.5, wy - 0.6, 'dust', 1, -Math.sign(c.vx) * 0.9);
+      }
+    }
+  }
+
   #render(dt, view, { working }) {
+    this.workingNow = working;
     const { width: w, height: h } = this.app.screen;
     const c = view.camper;
     const me = this.me;
@@ -474,8 +531,10 @@ export class Game {
     const halfW = w / 2 / ppm, halfH = h / 2 / ppm;
     const ground = this.terrain.surface[Math.max(0, Math.min(this.terrain.nx - 1, Math.round(this.cam.x / 0.25)))];
     this.refY = this.refY === undefined ? ground : this.refY + (ground - this.refY) * k * 0.5;
-    this.bg.update(this.cam.x, this.cam.y, ppm, this.refY);
-    this.fg.update(this.cam.x, w, h, ppm);
+    const wet = !!view.latest.wet;
+    this.bg.update(this.cam.x, this.cam.y, ppm, this.refY, this.time);
+    this.fg.update(this.cam.x, w, h, ppm, this.time, wet);
+    this.#weather(dt, w, h, wet);
     const treeState = new Map((view.latest.trees || []).map(t => [t[0], t]));
     this.forestView.update(this.cam.x - halfW, this.cam.x + halfW, treeState, view.tick, this.time);
     this.terrainView.update(this.cam.x - halfW, this.cam.x + halfW, this.cam.y - halfH, this.cam.y + halfH);
@@ -514,6 +573,8 @@ export class Game {
       if (!ok) this.cursor.circle(me.x, me.y + 0.9, REACH).stroke({ width: 0.03, color: 0xfff3d6, alpha: 0.18 });
     }
     this.#sounds(view);
+    this.#effects(view);
+    this.particles.update(dt, x => this.terrain.groundY(x, this.cam.y + halfH));
     this.ambience.update(dt, this.time, w, h, this.cam.x, x => this.terrain.groundY(x, this.cam.y + halfH));
   }
 }
