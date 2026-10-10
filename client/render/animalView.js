@@ -5,16 +5,19 @@ import { artSprite } from '../assets.js';
 // animal.<kind> replace the drawn body (legs are then not animated).
 
 const Q = {   // quadrupeds
-  dog:   { len: 0.72, h: 0.42, leg: 0.36, body: 0xd9a35a, belly: 0xf0d3a0, head: 0.16, ear: 'flop', tail: 'up', collar: 0xc2563f },
+  // Border collie: black with a white ruff, blaze, socks and tail tip.
+  dog:   { len: 0.74, h: 0.42, leg: 0.36, body: 0x2a2523, belly: 0xf3efe6, head: 0.15, ear: 'tipped', tail: 'bush', tip: 0xf3efe6, collie: true, collar: 0xc2563f },
   fox:   { len: 0.62, h: 0.34, leg: 0.3, body: 0xd9722e, belly: 0xf6eadb, head: 0.13, ear: 'point', tail: 'bush', tip: 0xf6eadb },
   deer:  { len: 1.15, h: 0.95, leg: 0.8, body: 0xa26f43, belly: 0xe5cfae, head: 0.17, ear: 'long', tail: 'flag', neck: 0.5 },
   moose: { len: 1.9, h: 1.45, leg: 1.1, body: 0x5b3f2b, belly: 0x7b5a40, head: 0.27, ear: 'long', tail: 'stub', neck: 0.35, antler: 0xc9a876, hump: true },
   bear:  { len: 1.55, h: 0.85, leg: 0.55, body: 0x5a3a26, belly: 0x6e4a32, head: 0.26, ear: 'round', tail: 'stub', muzzle: 0xa27a58 },
 };
 
-function legShape(w, len, color) {
+function legShape(w, len, color, sock) {
   const c = new Container();
-  c.addChild(new Graphics().roundRect(-w / 2, -len, w, len, w / 2).fill(color));
+  const g = new Graphics().roundRect(-w / 2, -len, w, len, w / 2).fill(color);
+  if (sock) g.roundRect(-w / 2, -len, w, len * 0.3, w / 2).fill(sock);
+  c.addChild(g);
   return c;
 }
 
@@ -46,7 +49,7 @@ export class AnimalView {
     const backColor = darken(p.body, 0.78);
     // Far legs (shaded), then body, then near legs.
     for (const [x, near] of [[len * 0.32, false], [-len * 0.32, false], [len * 0.36, true], [-len * 0.28, true]]) {
-      const l = legShape(legW, leg, near ? p.body : backColor);
+      const l = legShape(legW, leg, near ? p.body : backColor, p.collie ? (near ? 0xf3efe6 : 0xd8d2c6) : null);
       l.position.set(x, leg);
       this.legs.push({ l, phase: (x > 0 ? 0 : Math.PI) + (near ? Math.PI : 0) });
     }
@@ -60,6 +63,10 @@ export class AnimalView {
     body.ellipse(0.02, h - 0.04, len * 0.4, h * 0.18).fill(p.belly);
     body.ellipse(-len * 0.05, h + h * 0.22, len * 0.38, h * 0.1).fill({ color: 0xffe6b8, alpha: 0.18 });   // warm top light
     if (p.hump) body.ellipse(len * 0.18, h + h * 0.36, len * 0.22, h * 0.16).fill(p.body);
+    if (p.collie) {
+      body.ellipse(len * 0.36, h + 0.02, len * 0.16, h * 0.32).fill(p.belly);         // white chest and ruff
+      body.ellipse(len * 0.4, h + h * 0.28, len * 0.1, h * 0.2).fill(p.belly);
+    }
     this.flip.addChild(body);
     for (const L of this.legs.slice(2)) this.flip.addChild(L.l);
     // Head on a neck.
@@ -72,6 +79,13 @@ export class AnimalView {
     hg.circle(r * 0.35, r * 0.18, r * 0.11).fill(0x2d2420);               // eye
     hg.circle(r * 0.39, r * 0.22, r * 0.04).fill(0xffffff);
     if (p.ear === 'flop') hg.ellipse(-r * 0.35, -r * 0.05, r * 0.28, r * 0.55).fill(darken(p.body, 0.75));
+    if (p.ear === 'tipped') hg.poly([-r * 0.55, r * 0.45, -r * 0.3, r * 1.15, -r * 0.05, r * 1.2, r * 0.1, r * 0.95, -r * 0.05, r * 0.5]).fill(p.body);
+    if (p.collie) {
+      hg.poly([r * 0.05, r * 0.85, r * 0.3, r * 0.85, r * 1.2, -r * 0.05, r * 0.7, -r * 0.35]).fill(p.belly);   // blaze down to the muzzle
+      hg.ellipse(r * 1.0, -r * 0.3, r * 0.5, r * 0.28).fill(p.belly);
+      hg.circle(r * 1.5, -r * 0.12, r * 0.13).fill(0x2d2420);
+      hg.circle(r * 0.35, r * 0.18, r * 0.11).fill(0x6b4a2a).circle(r * 0.39, r * 0.22, r * 0.04).fill(0xffffff);
+    }
     if (p.ear === 'point') hg.poly([-r * 0.5, r * 0.5, -r * 0.1, r * 1.35, r * 0.15, r * 0.55]).fill(p.body).poly([-r * 0.35, r * 0.6, -r * 0.1, r * 1.1, r * 0.05, r * 0.62]).fill(0x2d2420);
     if (p.ear === 'long') hg.ellipse(-r * 0.45, r * 0.7, r * 0.18, r * 0.42).fill(p.body);
     if (p.ear === 'round') hg.circle(-r * 0.45, r * 0.75, r * 0.3).fill(p.body).circle(-r * 0.45, r * 0.75, r * 0.15).fill(darken(p.body, 0.7));

@@ -171,7 +171,7 @@ Design pillars:
 ### First pass (M4, built 2026-10-10)
 | Animal | Rescue | After rescue |
 |---|---|---|
-| Dog (near the start) | Hold E to make friends | Companion: follows the nearest traveller, rides when the camper drives, runs to animals in trouble within 35 m and barks |
+| Dog: a **border collie** (near the start) | Hold E to make friends | Companion: follows the nearest traveller. **Hops into the camper when everyone is aboard** and trots around inside after the travellers; **hops out when someone gets off** and the camper has stopped. Runs to animals in trouble within 35 m and barks |
 | Rabbit | Trapped in a collapsed burrow (a soil mound): dig it out | Rides in the camper |
 | Chipmunk | Pinned under a fallen branch (a real log): saw it or haul it away | Rides |
 | Songbird | Tangled in brambles: hold E | Rides |
@@ -324,4 +324,5 @@ Design pillars:
 | 2026-10-10 | Stay on the web stack; engine checkpoint (Godot?) after M4. Renderer becomes asset-driven; art test with generated art. |
 | 2026-10-10 | After play: dry soil no longer slides (rain only); inventory panel with camper storage; near wall shown unless someone is on foot inside; tilted campers can be boarded. |
 | 2026-10-10 | Inventory drag and drop. M4 first pass: nine animals with rescue scenes; small animals ride; dog companion; deer/hawk/moose/bear help when the camper struggles. |
+| 2026-10-10 | The dog is a border collie; it boards and leaves the camper with the travellers. |
 | 2026-10-10 | Pressure sources: storms (slick ground, slumping earthworks) and night (headlamps and headlights only). |

@@ -112,6 +112,42 @@ export class Sim {
     this.outbox.push({ t: 'fx', kind: 'rescued', animal: a.kind, x: a.x });
   }
 
+  // The dog hops into the camper when everyone is aboard, trots around inside
+  // after the travellers, and hops out when someone gets off and it has stopped.
+  // Returns true when the dog's movement is fully handled here.
+  #dogAboard(a, dt, outside, cp, cv) {
+    const inside = [...this.players.values()].filter(q => q.connected && q.avatar.mode === 'in');
+    const door = this.camperPoint(INTERIOR.doorX, INTERIOR.floorY);
+    if (a.state === 'riding-dog') {
+      if (outside.length && Math.abs(cv.x) < 1.0) {
+        Object.assign(a, { state: 'companion', x: door.x - 0.6, y: this.terrain.groundY(door.x - 0.6, door.y + 2), lane: 0, hop: this.tick });
+        return true;
+      }
+      const walker = inside.find(q => !q.seat) || inside[0];
+      const target = walker ? (walker.seat ? INTERIOR.seatX - 0.9 : walker.avatar.lx - 0.7 * (walker.avatar.facing || 1)) : INTERIOR.doorX + 0.6;
+      const step = Math.max(-2.8 * dt, Math.min(2.8 * dt, target - a.lx));
+      if (Math.abs(step) > 0.002) a.facing = Math.sign(step);
+      a.moving = Math.abs(step) > 0.01;
+      a.lx = Math.max(INTERIOR.minX + 0.2, Math.min(INTERIOR.maxX - 0.3, a.lx + step));
+      a.x = cp.x; a.lane = 0;
+      return true;
+    }
+    if (a.state !== 'companion' || outside.length || !inside.length) return false;
+    // Everyone is aboard: run to the door and hop in (or catch up if left far behind).
+    if (Math.abs(a.x - door.x) > 40) a.x = door.x - 2;
+    if (Math.abs(a.x - door.x) < 0.7 && Math.abs(cv.x) < 4) {
+      Object.assign(a, { state: 'riding-dog', lx: INTERIOR.doorX + 0.4, hop: this.tick, moving: false });
+      return true;
+    }
+    if (a.lane !== 0) { a.lane = 0; a.y = this.#animalGround(a); }
+    const step = Math.max(-8 * dt, Math.min(8 * dt, door.x - a.x));
+    a.facing = Math.sign(step) || a.facing;
+    a.moving = Math.abs(step) > 0.01;
+    a.x += step;
+    a.y = this.#animalGround(a);
+    return true;
+  }
+
   #carryAnimal(p, id) {
     const a = this.animals.find(o => o.id === id);
     if (!a) return;
@@ -159,7 +195,7 @@ export class Sim {
       // Moving animals: pick a target, walk or fly toward it.
       let tx = a.x, ty = null, lane = a.lane, help = false;
       if (def.size === 'dog') {
-        if (anyoneDriving) { a.state = 'riding-dog'; }
+        if (this.#dogAboard(a, dt, outside, cp, cv)) continue;
         const seek = this.animals.find(o => o.state === 'waiting' && Math.abs(o.x - a.x) < 35);
         const leader = outside.sort((u, v) => Math.abs(u.avatar.x - a.x) - Math.abs(v.avatar.x - a.x))[0];
         if (seek) { tx = seek.x - Math.sign(seek.x - a.x) * 2.2; lane = seek.lane; if (Math.abs(tx - a.x) < 1.5 && this.tick - a.bark > 180) a.bark = this.tick; }
@@ -181,10 +217,6 @@ export class Sim {
           if (def.helps === 'lift') ch.applyForce(Vec2(0, f), ch.getWorldPoint(Vec2(1.2 * S.dir, 1.5)), true);
           else { const ax = ch.getWorldVector(Vec2(1, 0)); ch.applyForceToCenter(Vec2(ax.x * f * S.dir, ax.y * f * S.dir), true); }
         }
-      }
-      if (a.state === 'riding-dog') {
-        if (!anyoneDriving && outside.length) a.state = 'companion';
-        else { a.lane = 0; continue; }
       }
       a.help = help;
       if (lane !== a.lane) { a.lane = lane; a.y = this.#animalGround(a); }
@@ -978,7 +1010,7 @@ export class Sim {
       items: [...this.items.values()].map(it => ({ id: it.id, kind: it.kind, lane: it.lane, x: round(it.x), y: round(it.y) })),
       toolbox: this.toolbox,
       rescued: this.rescued, struggling: this.struggle.active,
-      animals: this.animals.map(a => ({ id: a.id, kind: a.kind, state: a.state, x: round(a.x), y: round(a.y), lane: a.lane, p: round(a.progress), f: a.facing, help: !!a.help, moving: !!a.moving, bark: a.bark, spot: a.spot, stamina: round(a.stamina), carrier: a.carrier })),
+      animals: this.animals.map(a => ({ id: a.id, kind: a.kind, state: a.state, x: round(a.x), y: round(a.y), lane: a.lane, p: round(a.progress), f: a.facing, help: !!a.help, moving: !!a.moving, bark: a.bark, spot: a.spot, stamina: round(a.stamina), carrier: a.carrier, lx: round(a.lx || 0), hop: a.hop || 0 })),
       winch: { state: this.winch.state, carrier: this.winch.carrier, anchor: this.winch.anchor && { x: round(this.winch.anchor.x), y: round(this.winch.anchor.y), kind: this.winch.anchor.kind }, length: round(this.winch.length), reel: this.winch.reel, tension: round(this.winch.tension) },
     };
   }

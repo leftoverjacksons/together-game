@@ -646,14 +646,18 @@ export class Game {
     const meX = me.mode === 'in' ? c.x : me.x;
     for (const a of view.animals || []) {
       let v = this.animalViews.get(a.id);
-      if (!v) { v = new AnimalView(a.kind); this.animalViews.set(a.id, v); }
+      if (!v) { v = new AnimalView(a.kind); v.lastHop = a.hop; this.animalViews.set(a.id, v); }
       const def = ANIMALS[a.kind];
       const riding = a.state === 'riding' || a.state === 'riding-dog';
       const parent = riding ? this.camperView.interior : a.lane === 1 && a.kind !== 'hawk' ? this.forestView.actors : this.animalsRoad;
       if (v.root.parent !== parent) parent.addChild(v.root);
       if (Math.abs(a.x - this.cam.x) > 60 && !riding) { v.root.visible = false; continue; }
       v.root.visible = true;
-      const pos = riding ? (a.state === 'riding-dog' ? { x: -1.75, y: INTERIOR.floorY } : { x: RIDE_SPOTS[Math.max(0, a.spot)][0], y: RIDE_SPOTS[Math.max(0, a.spot)][1] }) : { x: a.x, y: a.y };
+      const pos = riding ? (a.state === 'riding-dog' ? { x: a.lx, y: INTERIOR.floorY } : { x: RIDE_SPOTS[Math.max(0, a.spot)][0], y: RIDE_SPOTS[Math.max(0, a.spot)][1] }) : { x: a.x, y: a.y };
+      // A little hop when the dog jumps in or out of the camper.
+      if (a.hop !== v.lastHop) { v.hopAt = this.time; v.lastHop = a.hop; }
+      const ht = (this.time - (v.hopAt ?? -9)) / 0.45;
+      if (ht >= 0 && ht < 1) pos.y += Math.sin(ht * Math.PI) * 0.55;
       const lastBark = this.barks?.get(a.id) || 0;
       if (a.bark && a.bark !== lastBark) { (this.barks = this.barks || new Map()).set(a.id, a.bark); this.audio?.bark(a.x); this.barkUntil = this.time + 0.6; }
       v.root.scale.set(!riding && a.lane === 1 && a.kind !== 'hawk' ? 0.9 : 1);
@@ -676,7 +680,7 @@ export class Game {
   #onRescued(msg) {
     const def = ANIMALS[msg.animal];
     const name = msg.animal;
-    const text = def.size === 'dog' ? 'The dog decides you are friends. It will sniff out animals in trouble.'
+    const text = def.size === 'dog' ? 'The border collie decides you are friends! It rides along and sniffs out animals in trouble.'
       : def.size === 'large' ? `You rescued the ${name}! It will walk with you and help when the camper struggles.`
       : `You rescued the ${name}! It hops into the camper.`;
     this.hud.toast(text);
