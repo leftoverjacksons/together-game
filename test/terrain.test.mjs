@@ -63,3 +63,32 @@ test('applyEdits reproduces server edits on a client copy', () => {
   client.applyEdits(r.indices, r.values);
   assert.deepEqual(client.density, server.density);
 });
+
+test('dug walls slump: mass is conserved and wet soil settles flatter', () => {
+  const profile = wet => {
+    const t = new Terrain(320, 11);
+    const x = 30, g = t.groundY(x);
+    for (let k = 0; k < 40; k++) for (const dx of [-0.4, 0, 0.4]) t.dig(x + dx, g - 0.2 - k * 0.06, 0.5, 120, 100);
+    const before = t.density.reduce((a, b) => a + b, 0);
+    const wall = t.groundY(x + 0.9) - t.groundY(x + 0.4);
+    for (let k = 0; k < 800 && t.active.size; k++) t.slump(wet);
+    assert.equal(t.active.size, 0, 'settles completely');
+    assert.equal(t.density.reduce((a, b) => a + b, 0), before);
+    return { wall, after: t.groundY(x + 0.9) - t.groundY(x + 0.4), depth: g - t.groundY(x) };
+  };
+  const dry = profile(false), wet = profile(true);
+  assert.ok(dry.wall > 2, 'starts as a vertical wall');
+  assert.ok(dry.after < 0.7, `dry slope softened (${dry.after})`);
+  assert.ok(wet.depth < dry.depth, 'wet soil fills the pit more');
+});
+
+test('slumping cannot pass through a blocking board', () => {
+  const t = new Terrain(320, 11);
+  const x = 30, g = t.groundY(x);
+  for (let k = 0; k < 40; k++) for (const dx of [-0.4, 0, 0.4]) t.dig(x + dx, g - 0.2 - k * 0.06, 0.5, 120, 100);
+  const wallX = x + 0.95;
+  const blocked = (ax, ay, bx) => (ax - wallX) * (bx - wallX) <= 0 || Math.abs(ax - wallX) < 0.13;
+  for (let k = 0; k < 800 && t.active.size; k++) t.slump(true, blocked);
+  assert.ok(g - t.groundY(x + 1.2) < 0.3, 'soil behind the board stays up');
+  assert.ok(g - t.groundY(x - 1.2) > 0.5, 'the unshored side slumps');
+});

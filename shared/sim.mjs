@@ -1,26 +1,38 @@
-import { World, Vec2, Edge, Circle, Polygon, WheelJoint } from 'planck';
+import { World, Vec2, Edge, Circle, Polygon, Box, WheelJoint } from 'planck';
 import {
   CELL, CHUNK, GRAVITY, REACH, BRUSH_RADIUS, SOIL_CAPACITY, STRETCH_LENGTH, INTERIOR, STATION_RANGE, MAX_PLAYERS,
+  TOOLS, BOARD_CARRY, RACK_BOARDS, RACK_LOGS, BOARD_MASS, LOG_DENSITY, RACK_POINT, RACK_RANGE, WORK_RANGE,
+  TOOL_SLOTS, START_TOOLS, START_TOOLBOX, TOOLBOX_SIZE, ITEM_RANGE, GIVE_RANGE, WINCH, TOOL_NAMES,
 } from './constants.mjs';
+import { mulberry32 } from './rng.mjs';
 import { Terrain } from './terrain.mjs';
 import { newAvatar } from './character.mjs';
+import { Structure } from './structure.mjs';
+import { forestFloor, floorAt, generateTrees, TREE_HP, logLength, boardsFromLog, LOG_THICKNESS } from './forest.mjs';
 
 // Authoritative simulation for one trip: terrain, camper physics, player
 // stations. Avatars are simulated by their owning client and reported here.
 
 export const CAMPER = {
   // Chassis outline (local metres, y up). Wheels hang below.
-  hull: [[-3.2, -0.75], [2.9, -0.75], [3.35, 0.05], [3.1, 1.85], [-3.2, 1.85]],
-  wheelR: 0.68,
-  wheelX: [-2.05, 2.05],
-  wheelY: -1.05,
+  // Raked nose and tail so the camper rides up onto obstacles instead of catching.
+  hull: [[-2.95, -0.62], [2.65, -0.62], [3.35, 0.2], [3.1, 1.85], [-3.2, 1.85], [-3.3, -0.05]],
+  wheelR: 0.72,
+  wheelX: [-2.25, 2.25],
+  wheelY: -1.2,
+  springHz: 5.2,
+  springDamping: 0.85,
   maxSpeed: 12,       // wheel rad/s
   torque: 5600,       // per wheel, N·m
   brakeTorque: 9000,
   idleTorque: 260,
 };
 const ACTIVE_RANGE = 44;          // metres around the camper with collision built
-const DIG_STRENGTH = 70, FILL_STRENGTH = 70;
+const DIG_STRENGTH = 70, FILL_STRENGTH = 70, PICK_STRENGTH = 30;
+const CHOP_EVERY = 18, SAW_EVERY = 6, SAW_WORK = 36;   // ticks between strokes; strokes per log
+const CARRY_FORCE = 3400, CARRY_K = 3200, CARRY_C = 450, CARRY_SLIP = 2.6;
+const MAX_BOARDS = 150;
+const SLUMP_EVERY = 6;           // ticks between settling passes (10 Hz)
 const PUSH_SPIN = 0.45, PUSH_RANGE = 4.8;   // rad/s per pusher
 const round = v => Math.round(v * 1000) / 1000;
 
@@ -40,20 +52,55 @@ export class Sim {
     // End walls so nothing leaves the stretch.
     const walls = this.world.createBody({ type: 'static' });
     for (const x of [0, length]) walls.createFixture(new Edge(Vec2(x, 0), Vec2(x, 200)), { friction: 0.3 });
+    this.wet = false;               // rain: faster, shallower slumping
+    this.floor = forestFloor(this.terrain);
+    this.trees = generateTrees(this.terrain, this.seed).map(t => ({ ...t, hp: TREE_HP, fallDir: 0, fellTick: 0 }));
+    this.logs = new Map();          // id -> { id, lane, len, x, y, a, body, carriers: [{ pid, end }], saw }
+    this.piles = new Map();         // id -> { id, lane, x, y, n }
+    this.rack = { boards: 0, logs: [] };
+    this.nextId = 1;
+    this.items = new Map();         // id -> { id, kind, lane, x, y } tools lying in the world
+    this.toolbox = [...START_TOOLBOX];
+    this.winch = { state: 'stowed', carrier: null, anchor: null, length: 0, reel: 0, tension: 0 };
+    this.structure = new Structure(this.world, this.terrain);
+    this.slumpBlocked = (ax, ay, bx, by) => this.structure.boards.size > 0 && this.structure.blocksSegment(ax, ay, bx, by);
     this.#createCamper(22);
+    this.#placeFinds();
   }
+
+  // Finds: spare tools lying along the stretch, mostly among the trees.
+  #placeFinds() {
+    const rand = mulberry32(this.seed ^ 0xf1d5);
+    const kinds = ['pickaxe', 'jack', 'pickaxe', 'jack', 'axe', 'saw'];
+    let x = 55 + rand() * 30;
+    for (const kind of kinds) {
+      if (x > this.terrain.length - 40) break;
+      const lane = rand() < 0.7 ? 1 : 0;
+      this.#addItem(kind, lane, x);
+      x += 70 + rand() * 60;
+    }
+  }
+
+  #addItem(kind, lane, x) {
+    const y = lane === 1 ? floorAt(this.floor, x) : this.terrain.groundY(x, 47);
+    const item = { id: this.nextId++, kind, lane, x, y };
+    this.items.set(item.id, item);
+    return item;
+  }
+
+  toolOf(p) { return p.tools[p.tool] || null; }
 
   #createCamper(x) {
     const g = this.terrain.groundY(x);
     const y = g - CAMPER.wheelY + CAMPER.wheelR + 0.15;
-    const chassis = this.world.createBody({ type: 'dynamic', position: Vec2(x, y), angularDamping: 0.25 });
+    const chassis = this.world.createBody({ type: 'dynamic', position: Vec2(x, y), angularDamping: 0.5 });
     chassis.createFixture(new Polygon(CAMPER.hull.map(([a, b]) => Vec2(a, b))), { density: 145, friction: 0.55 });
     const wheels = [], joints = [];
     for (const wx of CAMPER.wheelX) {
       const wheel = this.world.createBody({ type: 'dynamic', position: Vec2(x + wx, y + CAMPER.wheelY), angularDamping: 0.4 });
       wheel.createFixture(new Circle(CAMPER.wheelR), { density: 70, friction: 1.25, restitution: 0.05 });
       const joint = this.world.createJoint(new WheelJoint({
-        enableMotor: true, motorSpeed: 0, maxMotorTorque: CAMPER.idleTorque, frequencyHz: 3.2, dampingRatio: 0.65,
+        enableMotor: true, motorSpeed: 0, maxMotorTorque: CAMPER.idleTorque, frequencyHz: CAMPER.springHz, dampingRatio: CAMPER.springDamping,
       }, chassis, wheel, wheel.getPosition(), Vec2(0, 1)));
       wheels.push(wheel); joints.push(joint);
     }
@@ -68,6 +115,14 @@ export class Sim {
     const cx1 = Math.min(t.chunksX - 1, Math.floor((this.camper.chassis.getPosition().x + ACTIVE_RANGE) / (CHUNK * CELL)));
     const wanted = new Set();
     for (let cy = 0; cy < t.chunksY; cy++) for (let cx = cx0; cx <= cx1; cx++) wanted.add(cy * t.chunksX + cx);
+    // Keep ground under loose logs on the road, wherever they are.
+    const loose = [...(this.logs?.values() || [])].map(l => l.body).concat([...(this.structure?.debris.values() || [])].map(d => d.body));
+    for (const body of loose) {
+      if (!body) continue;
+      const lx = body.getPosition().x, size = CHUNK * CELL;
+      for (let cx = Math.max(0, Math.floor((lx - 6) / size)); cx <= Math.min(t.chunksX - 1, Math.floor((lx + 6) / size)); cx++)
+        for (let cy = 0; cy < t.chunksY; cy++) wanted.add(cy * t.chunksX + cx);
+    }
     for (const [id, cb] of this.chunkBodies) if (!wanted.has(id)) { this.world.destroyBody(cb.body); this.chunkBodies.delete(id); }
     for (const id of wanted) {
       const cb = this.chunkBodies.get(id);
@@ -94,6 +149,7 @@ export class Sim {
     c.wheels.forEach((w, k) => w.setTransform(Vec2(x + CAMPER.wheelX[k], y + CAMPER.wheelY), 0));
     for (const b of [c.chassis, ...c.wheels]) { b.setLinearVelocity(Vec2(0, 0)); b.setAngularVelocity(0); b.setAwake(true); }
     this.tippedFor = 0;
+    this.tipped = false;
     this.#syncTerrainBodies();
   }
 
@@ -104,23 +160,32 @@ export class Sim {
     const avatar = newAvatar(c.x, c.y);
     avatar.mode = 'in';
     avatar.lx = INTERIOR.doorX + 0.6 + this.players.size * 1.4;
-    const p = { id, name: String(name || 'Traveller').slice(0, 20), avatar, seat: null, soil: 0, pushing: false, connected: true, lastTool: 0 };
+    const tools = [...START_TOOLS[this.players.size % START_TOOLS.length]];
+    const p = { id, name: String(name || 'Traveller').slice(0, 20), avatar, seat: null, soil: 0, pushing: false, connected: true, lastTool: 0, tool: 0, tools, boards: 0, carrying: null };
     this.players.set(id, p);
     return p;
   }
 
-  removePlayer(id) { this.#unseat(this.players.get(id)); this.players.delete(id); }
+  removePlayer(id) { const p = this.players.get(id); this.#unseat(p); this.#release(p); this.#dropHook(p); this.players.delete(id); }
 
   setConnected(id, on) {
     const p = this.players.get(id);
     if (!p) return;
     p.connected = on;
-    if (!on) { this.#unseat(p); p.pushing = false; }
+    if (!on) { this.#unseat(p); this.#release(p); this.#dropHook(p); p.pushing = false; }
   }
 
   #unseat(p) {
     if (p && p.seat === 'cab') { this.camper.throttle = 0; this.camper.brake = false; }
+    if (p && (p.seat === 'winch' || p.seat === 'cab')) this.winch.reel = 0;
     if (p) p.seat = null;
+  }
+
+  // The winch can be run from its station, or from the wheel when travelling alone.
+  #canWinch(p) {
+    if (p.seat === 'winch') return true;
+    const others = [...this.players.values()].filter(q => q.connected && q !== p).length;
+    return p.seat === 'cab' && others === 0;
   }
 
   driver() { for (const p of this.players.values()) if (p.seat === 'cab') return p; return null; }
@@ -140,20 +205,33 @@ export class Sim {
         const a = msg.a || {};
         const num = (v, d) => (Number.isFinite(v) ? v : d);
         const mode = a.mode === 'in' ? 'in' : 'out';
+        const lane = mode === 'out' && a.lane === 1 ? 1 : 0;
         if (mode === 'out' && p.seat) this.#unseat(p);
+        if (mode === 'in' && this.winch.carrier === p.id) this.#dropHook(p);
+        if (p.carrying !== null && (mode === 'in' || lane !== p.avatar.lane)) this.#carryAcrossLanes(p, mode, lane, num(a.x, p.avatar.x));
+        p.avatar.lane = lane;
         Object.assign(p.avatar, {
           mode, x: num(a.x, p.avatar.x), y: num(a.y, p.avatar.y), vx: num(a.vx, 0), vy: num(a.vy, 0),
           facing: a.facing < 0 ? -1 : 1, lx: Math.max(INTERIOR.minX, Math.min(INTERIOR.maxX, num(a.lx, 0))),
-          onGround: !!a.onGround, walkPhase: num(a.walkPhase, 0),
+          onGround: !!a.onGround, walkPhase: num(a.walkPhase, 0), working: a.working === true,
         });
         break;
       }
       case 'seat': {
-        if (p.avatar.mode !== 'in' || Math.abs(p.avatar.lx - INTERIOR.seatX) > STATION_RANGE + 0.2) break;
-        const d = this.driver();
-        if (!d) p.seat = 'cab';
+        const station = msg.station === 'winch' ? 'winch' : 'cab';
+        const at = station === 'winch' ? INTERIOR.winchX : INTERIOR.seatX;
+        if (p.avatar.mode !== 'in' || Math.abs(p.avatar.lx - at) > STATION_RANGE + 0.2) break;
+        if ([...this.players.values()].some(q => q !== p && q.seat === station)) break;
+        this.#unseat(p);
+        p.seat = station;
         break;
       }
+      case 'winch': if (this.#canWinch(p)) this.winch.reel = Math.max(-1, Math.min(1, msg.reel | 0)); break;
+      case 'hook': this.#hook(p); break;
+      case 'pickup': this.#pickup(p, msg.id); break;
+      case 'droptool': this.#dropTool(p); break;
+      case 'give': this.#give(p); break;
+      case 'toolbox': this.#toolboxSwap(p, msg.kind); break;
       case 'unseat': this.#unseat(p); break;
       case 'drive': {
         if (p.seat !== 'cab') break;
@@ -162,6 +240,19 @@ export class Sim {
         break;
       }
       case 'push': p.pushing = msg.on === true; break;
+      case 'tool': p.tool = Math.max(0, Math.min(TOOL_SLOTS - 1, msg.i | 0)); break;
+      case 'chop': this.#chop(p); break;
+      case 'saw': this.#saw(p); break;
+      case 'grab': this.#grab(p, msg.id); break;
+      case 'release': this.#release(p); break;
+      case 'take': this.#take(p, msg.id); break;
+      case 'drop': this.#dropBoards(p); break;
+      case 'stow': this.#stow(p); break;
+      case 'unstow': this.#unstow(p); break;
+      case 'build': this.#build(p, msg); break;
+      case 'unbuild': this.#unbuild(p, msg); break;
+      case 'salvage': this.#salvage(p, msg.id); break;
+      case 'weather': this.wet = msg.wet === true; break;   // temporary toggle until weather exists
       case 'dig':
       case 'fill': this.#tool(p, msg); break;
     }
@@ -171,14 +262,19 @@ export class Sim {
     const now = this.tick;
     if (now - p.lastTool < 4) return;              // ~15 ops/s
     const x = Number(msg.x), y = Number(msg.y);
+    const tool = this.toolOf(p);
     if (!Number.isFinite(x) || !Number.isFinite(y) || p.avatar.mode !== 'out') return;
+    if (tool !== 'shovel' && !(tool === 'pickaxe' && msg.t === 'dig')) return;
     const ax = p.avatar.x, ay = p.avatar.y + 0.9;
     if ((x - ax) ** 2 + (y - ay) ** 2 > REACH * REACH) return;
     p.lastTool = now;
     let r;
     if (msg.t === 'dig') {
       if (p.soil >= SOIL_CAPACITY - 1e-3) return;
-      r = this.terrain.dig(x, y, BRUSH_RADIUS, DIG_STRENGTH, SOIL_CAPACITY - p.soil);
+      // The pickaxe breaks rock as well as soil, but slowly; rubble goes in the bucket.
+      r = tool === 'pickaxe'
+        ? this.terrain.dig(x, y, BRUSH_RADIUS * 0.8, PICK_STRENGTH, SOIL_CAPACITY - p.soil, true)
+        : this.terrain.dig(x, y, BRUSH_RADIUS, DIG_STRENGTH, SOIL_CAPACITY - p.soil);
       p.soil = Math.min(SOIL_CAPACITY, p.soil + r.volume);
     } else {
       if (p.soil <= 1e-3) return;
@@ -201,9 +297,423 @@ export class Sim {
     }
     for (const q of this.players.values()) {
       const a = q.avatar;
-      if (a.mode === 'out' && Math.abs(wx - a.x) < 0.4 && wy > a.y - 0.1 && wy < a.y + 1.7) return true;
+      if (a.mode === 'out' && (a.lane || 0) === 0 && Math.abs(wx - a.x) < 0.4 && wy > a.y - 0.1 && wy < a.y + 1.7) return true;
     }
+    return this.structure.pointInBoard(wx, wy, 0.1);
+  }
+
+  #camperOccupied(wx, wy) {
+    const pt = Vec2(wx, wy);
+    const { chassis, wheels } = this.camper;
+    for (const b of [chassis, ...wheels]) for (let f = b.getFixtureList(); f; f = f.getNext()) if (f.testPoint(pt)) return true;
     return false;
+  }
+
+  // ----- Building -----
+
+  #notice(p, msg) { this.outbox.push({ t: 'notice', to: p.id, msg }); }
+
+  #build(p, msg) {
+    const vals = [msg.ax, msg.ay, msg.bx, msg.by].map(Number);
+    if (!vals.every(Number.isFinite) || this.toolOf(p) !== 'hammer' || p.avatar.mode !== 'out' || (p.avatar.lane || 0) !== 0) return;
+    if (p.boards < 1) return this.#notice(p, 'You need boards: saw a log, or take some from the roof rack');
+    if (this.structure.boards.size >= MAX_BOARDS) return this.#notice(p, 'That is a lot of boards already');
+    const [ax, ay, bx, by] = vals;
+    const hx = p.avatar.x, hy = p.avatar.y + 0.9;
+    if (Math.hypot(ax - hx, ay - hy) > REACH + 0.6) return this.#notice(p, 'Too far away');
+    const r = this.structure.place(ax, ay, bx, by, (x, y) => this.#camperOccupied(x, y));
+    if (r.error) return this.#notice(p, r.error);
+    p.boards--;
+    const fallen = this.structure.analyse();
+    if (r.board.unstable) this.#notice(p, 'Shaky! Brace it to the ground or another board before it falls');
+    if (fallen.length) this.outbox.push({ t: 'fx', kind: 'snap', n: fallen.length });
+  }
+
+  #unbuild(p, msg) {
+    if (this.toolOf(p) !== 'hammer' || p.avatar.mode !== 'out') return;
+    const x = Number(msg.x), y = Number(msg.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || Math.hypot(x - p.avatar.x, y - p.avatar.y - 0.9) > REACH + 0.6) return;
+    const b = this.structure.boardAt(x, y, 0.35);
+    if (!b) return;
+    this.structure.remove(b.id);
+    if (p.boards < BOARD_CARRY) p.boards++; else this.#addPile(0, x, 1);
+    const fallen = this.structure.analyse();
+    if (fallen.length) this.outbox.push({ t: 'fx', kind: 'snap', n: fallen.length });
+  }
+
+  #salvage(p, id) {
+    const d = this.structure.debris.get(id);
+    if (!d || p.avatar.mode !== 'out' || p.boards >= BOARD_CARRY) return;
+    const q = d.body.getPosition();
+    if (Math.hypot(q.x - p.avatar.x, q.y - p.avatar.y - 0.5) > WORK_RANGE + 0.5) return;
+    this.structure.salvage(id);
+    p.boards++;
+  }
+
+  // ----- Timber -----
+
+  #near(p, lane, x, range) { return p.avatar.mode === 'out' && p.avatar.lane === lane && Math.abs(p.avatar.x - x) < range; }
+
+  logPose(log) {
+    if (log.body) { const q = log.body.getPosition(); return { x: q.x, y: q.y, a: log.body.getAngle() }; }
+    return { x: log.x, y: log.y, a: log.a };
+  }
+
+  #chop(p) {
+    if (this.toolOf(p) !== 'axe' || this.tick - (p.lastChop || 0) < CHOP_EVERY) return;
+    let best = null;
+    for (const t of this.trees) if (t.hp > 0 && this.#near(p, 1, t.x, WORK_RANGE) && (!best || Math.abs(t.x - p.avatar.x) < Math.abs(best.x - p.avatar.x))) best = t;
+    if (!best) return;
+    p.lastChop = this.tick;
+    best.hp--;
+    best.lastHit = this.tick;
+    if (best.hp > 0) return;
+    best.fallDir = best.x >= p.avatar.x ? 1 : -1;
+    best.fellTick = this.tick;
+    const len = logLength(best);
+    const x = Math.max(len / 2 + 0.5, Math.min(this.terrain.length - len / 2 - 0.5, best.x + best.fallDir * (len / 2 + 0.4)));
+    this.#addLog(1, len, x);
+  }
+
+  #addLog(lane, len, x, y) {
+    const log = { id: this.nextId++, lane, len, x, y: 0, a: 0, body: null, carriers: [], saw: 0 };
+    this.logs.set(log.id, log);
+    if (lane === 1) this.#settleForestLog(log);
+    else this.#makeLogBody(log, x, y ?? this.terrain.groundY(x) + 0.6);
+    return log;
+  }
+
+  #settleForestLog(log) {
+    const h = log.len / 2;
+    const ya = floorAt(this.floor, log.x - h), yb = floorAt(this.floor, log.x + h);
+    log.y = (ya + yb) / 2 + LOG_THICKNESS / 2;
+    log.a = Math.atan2(yb - ya, log.len);
+  }
+
+  #makeLogBody(log, x, y, a = 0) {
+    const body = this.world.createBody({ type: 'dynamic', position: Vec2(x, y), angle: a, angularDamping: 0.6, linearDamping: 0.05 });
+    body.createFixture(new Box(log.len / 2, LOG_THICKNESS / 2), { density: LOG_DENSITY, friction: 0.85 });
+    log.body = body;
+    this.#syncTerrainBodies();
+  }
+
+  #removeLog(log) {
+    for (const c of log.carriers) { const q = this.players.get(c.pid); if (q) q.carrying = null; }
+    if (log.body) this.world.destroyBody(log.body);
+    this.logs.delete(log.id);
+  }
+
+  #logDistance(p, log) {
+    const { x, y, a } = this.logPose(log);
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const px = p.avatar.x - x, py = p.avatar.y + 0.5 - y;
+    const along = Math.max(-log.len / 2, Math.min(log.len / 2, px * ca + py * sa));
+    return Math.hypot(px - along * ca, py - along * sa);
+  }
+
+  #nearestLog(p, range = WORK_RANGE) {
+    let best = null, bd = range;
+    for (const log of this.logs.values()) {
+      if (log.lane !== p.avatar.lane || p.avatar.mode !== 'out') continue;
+      const d = this.#logDistance(p, log);
+      if (d < bd) { bd = d; best = log; }
+    }
+    return best;
+  }
+
+  #saw(p) {
+    if (this.toolOf(p) !== 'saw' || this.tick - (p.lastSaw || 0) < SAW_EVERY) return;
+    const log = this.#nearestLog(p);
+    if (!log || log.carriers.length) return;
+    p.lastSaw = this.tick;
+    log.saw++;
+    log.lastSaw = this.tick;
+    if (log.saw < SAW_WORK) return;
+    const { x } = this.logPose(log);
+    const lane = log.lane;
+    this.#removeLog(log);
+    this.#addPile(lane, x, boardsFromLog(log.len));
+  }
+
+  #addPile(lane, x, n) {
+    for (const pile of this.piles.values()) if (pile.lane === lane && Math.abs(pile.x - x) < 0.8) { pile.n += n; return pile; }
+    const y = lane === 1 ? floorAt(this.floor, x) : this.terrain.groundY(x, 47);
+    const pile = { id: this.nextId++, lane, x, y, n };
+    this.piles.set(pile.id, pile);
+    return pile;
+  }
+
+  #grab(p, id) {
+    if (p.carrying !== null) return this.#release(p);
+    const log = this.logs.get(id) || this.#nearestLog(p);
+    if (!log || log.carriers.length >= 2 || this.#logDistance(p, log) > WORK_RANGE) return;
+    const { x, a } = this.logPose(log);
+    const along = (p.avatar.x - x) * Math.cos(a);
+    let end = along >= 0 ? 1 : -1;
+    if (log.carriers.some(c => c.end === end)) end = -end;
+    log.carriers.push({ pid: p.id, end });
+    p.carrying = log.id;
+  }
+
+  #release(p) {
+    if (!p || p.carrying === null) return;
+    const log = this.logs.get(p.carrying);
+    if (log) log.carriers = log.carriers.filter(c => c.pid !== p.id);
+    p.carrying = null;
+  }
+
+  // A lone carrier takes the log between lanes; with two carriers, the one
+  // who leaves lets go.
+  #carryAcrossLanes(p, mode, lane, x) {
+    const log = this.logs.get(p.carrying);
+    if (!log || mode === 'in' || log.carriers.length > 1) return this.#release(p);
+    const pose = this.logPose(log);
+    if (lane === 0) {
+      log.lane = 0;
+      const cx = Math.max(log.len / 2 + 0.5, Math.min(this.terrain.length - log.len / 2 - 0.5, pose.x));
+      this.#makeLogBody(log, cx, this.terrain.groundY(cx, 47) + 0.6, 0);
+    } else {
+      if (log.body) { this.world.destroyBody(log.body); log.body = null; }
+      log.lane = 1; log.x = pose.x;
+      this.#settleForestLog(log);
+    }
+  }
+
+  #take(p, id) {
+    const pile = this.piles.get(id);
+    if (!pile || !this.#near(p, pile.lane, pile.x, WORK_RANGE)) return;
+    const n = Math.min(BOARD_CARRY - p.boards, pile.n);
+    p.boards += n; pile.n -= n;
+    if (pile.n <= 0) this.piles.delete(pile.id);
+  }
+
+  #dropBoards(p) {
+    if (!p.boards || p.avatar.mode !== 'out') return;
+    this.#addPile(p.avatar.lane, p.avatar.x, p.boards);
+    p.boards = 0;
+  }
+
+  rackPoint() { return this.camperPoint(RACK_POINT.x, RACK_POINT.y); }
+
+  #atRack(p) {
+    const r = this.rackPoint();
+    return p.avatar.mode === 'out' && p.avatar.lane === 0 && Math.hypot(p.avatar.x - r.x, p.avatar.y + 0.8 - r.y) < RACK_RANGE + 0.6;
+  }
+
+  #stow(p) {
+    if (!this.#atRack(p)) return;
+    if (p.carrying !== null) {
+      const log = this.logs.get(p.carrying);
+      if (!log || this.rack.logs.length >= RACK_LOGS) return;
+      this.rack.logs.push(log.len);
+      this.#removeLog(log);
+    } else if (p.boards) {
+      const n = Math.min(p.boards, RACK_BOARDS - this.rack.boards);
+      this.rack.boards += n; p.boards -= n;
+    } else return;
+    this.#updateCargoMass();
+  }
+
+  #unstow(p) {
+    if (!this.#atRack(p) || p.carrying !== null) return;
+    if (this.rack.boards && p.boards < BOARD_CARRY) {
+      const n = Math.min(BOARD_CARRY - p.boards, this.rack.boards);
+      this.rack.boards -= n; p.boards += n;
+    } else if (this.rack.logs.length) {
+      const len = this.rack.logs.pop();
+      const r = this.rackPoint();
+      const x = r.x + len / 2 + 0.8;
+      this.#addLog(0, len, x, Math.max(r.y + 1.2, this.terrain.groundY(x, 47) + 0.6));
+    } else return;
+    this.#updateCargoMass();
+  }
+
+  cargoMass() { return this.rack.boards * BOARD_MASS + this.rack.logs.reduce((s, len) => s + len * LOG_THICKNESS * LOG_DENSITY, 0); }
+
+  // Cargo rides on the roof: it adds mass and raises the centre of gravity.
+  #updateCargoMass() {
+    const ch = this.camper.chassis;
+    ch.resetMassData();
+    const extra = this.cargoMass();
+    if (extra <= 0) return;
+    const md = { mass: 0, center: Vec2(0, 0), I: 0 };
+    ch.getMassData(md);
+    const roofY = 2.3, m = md.mass + extra;
+    const center = Vec2(md.center.x * md.mass / m, (md.center.y * md.mass + roofY * extra) / m);
+    ch.setMassData({ mass: m, center, I: md.I + extra * (roofY * roofY + 1.5) });
+  }
+
+  #stepLogs(dt) {
+    for (const log of this.logs.values()) {
+      if (!log.carriers.length) continue;
+      const pose = this.logPose(log);
+      const ca = Math.cos(pose.a), sa = Math.sin(pose.a);
+      const grip = log.len / 2 - 0.3;
+      for (const c of [...log.carriers]) {
+        const q = this.players.get(c.pid);
+        const gx = pose.x + ca * grip * c.end, gy = pose.y + sa * grip * c.end;
+        if (!q || !q.connected || q.avatar.lane !== log.lane || q.avatar.mode !== 'out' || Math.abs(q.avatar.x - gx) > CARRY_SLIP) { this.#release(q || { carrying: log.id, id: c.pid }); continue; }
+      }
+      if (!log.carriers.length) continue;
+      if (log.lane === 1) {
+        let target = 0;
+        for (const c of log.carriers) target += this.players.get(c.pid).avatar.x - c.end * grip;
+        target /= log.carriers.length;
+        const step = Math.max(-6 * dt, Math.min(6 * dt, target - log.x));
+        log.x = Math.max(log.len / 2, Math.min(this.terrain.length - log.len / 2, log.x + step));
+        this.#settleForestLog(log);
+      } else {
+        // Spring each grip toward the carrier's hands, capped per person: one
+        // traveller can only lift one end, so a lone carrier drags the log.
+        const b = log.body;
+        for (const c of log.carriers) {
+          const q = this.players.get(c.pid);
+          const g = b.getWorldPoint(Vec2(grip * c.end, 0));
+          const v = b.getLinearVelocityFromWorldPoint(g);
+          let fx = CARRY_K * (q.avatar.x - g.x) - CARRY_C * (v.x - q.avatar.vx);
+          let fy = CARRY_K * (q.avatar.y + 0.95 - g.y) - CARRY_C * v.y;
+          const f = Math.hypot(fx, fy);
+          if (f > CARRY_FORCE) { fx *= CARRY_FORCE / f; fy *= CARRY_FORCE / f; }
+          b.applyForce(Vec2(fx, fy), g, true);
+        }
+      }
+    }
+  }
+
+  // ----- Items -----
+
+  #nearItem(p, id) {
+    const it = this.items.get(id);
+    return it && p.avatar.mode === 'out' && (p.avatar.lane || 0) === it.lane && Math.abs(it.x - p.avatar.x) < ITEM_RANGE + 0.3 ? it : null;
+  }
+
+  #pickup(p, id) {
+    const it = this.#nearItem(p, id);
+    if (!it) return;
+    let slot = p.tools.indexOf(null);
+    if (slot < 0) { slot = p.tool; this.#addItem(p.tools[slot], it.lane, p.avatar.x); }   // full: swap with the tool in hand
+    p.tools[slot] = it.kind;
+    p.tool = slot;
+    this.items.delete(it.id);
+  }
+
+  #dropTool(p) {
+    const kind = this.toolOf(p);
+    if (!kind || p.avatar.mode !== 'out') return;
+    this.#addItem(kind, p.avatar.lane || 0, p.avatar.x + 0.3 * (p.avatar.facing || 1));
+    p.tools[p.tool] = null;
+  }
+
+  #give(p) {
+    const kind = this.toolOf(p);
+    if (!kind) return;
+    const q = [...this.players.values()].find(o => o !== p && o.connected && o.avatar.mode === p.avatar.mode &&
+      (p.avatar.mode === 'in' ? Math.abs(o.avatar.lx - p.avatar.lx) < GIVE_RANGE : (o.avatar.lane || 0) === (p.avatar.lane || 0) && Math.hypot(o.avatar.x - p.avatar.x, o.avatar.y - p.avatar.y) < GIVE_RANGE));
+    if (!q) return this.#notice(p, 'Get closer to your partner to hand it over');
+    const slot = q.tools.indexOf(null);
+    if (slot < 0) return this.#notice(p, 'Their hands are full: they need to drop or stow a tool');
+    q.tools[slot] = kind;
+    p.tools[p.tool] = null;
+    this.#notice(q, `${p.name} handed you the ${TOOL_NAMES[kind].toLowerCase()}`);
+  }
+
+  // At the toolbox: swap the tool in hand for one from the box (or just put it away).
+  #toolboxSwap(p, kind) {
+    if (p.avatar.mode !== 'in' || Math.abs(p.avatar.lx - INTERIOR.toolboxX) > STATION_RANGE + 0.2) return;
+    const held = this.toolOf(p);
+    const k = this.toolbox.indexOf(kind);
+    if (k >= 0) {
+      this.toolbox.splice(k, 1);
+      if (held) this.toolbox.push(held);
+      p.tools[p.tool] = kind;
+    } else if (held && this.toolbox.length < TOOLBOX_SIZE) {
+      this.toolbox.push(held);
+      p.tools[p.tool] = null;
+    }
+  }
+
+  // ----- Winch -----
+
+  winchPoint() { return this.camperPoint(WINCH.x, WINCH.y); }
+
+  #dropHook(p) {
+    if (p && this.winch.carrier === p.id) Object.assign(this.winch, { state: 'stowed', carrier: null, anchor: null });
+  }
+
+  // E with the hook: take it from the bumper, attach it to a tree, stump or rock,
+  // take it back off, or stow it.
+  #hook(p) {
+    const w = this.winch, a = p.avatar;
+    if (a.mode !== 'out') return;
+    const wp = this.winchPoint();
+    const hands = { x: a.x, y: a.y + 0.95 };
+    if (w.state === 'stowed') {
+      if ((a.lane || 0) === 0 && Math.hypot(hands.x - wp.x, hands.y - wp.y) < RACK_RANGE + 0.6) Object.assign(w, { state: 'carried', carrier: p.id, anchor: null });
+      return;
+    }
+    if (w.state === 'carried' && w.carrier === p.id) {
+      if ((a.lane || 0) === 0 && Math.hypot(hands.x - wp.x, hands.y - wp.y) < RACK_RANGE + 0.6) { Object.assign(w, { state: 'stowed', carrier: null }); return; }
+      const anchor = this.#findAnchor(p);
+      if (!anchor) return this.#notice(p, 'Hook it to a tree, a stump or rock');
+      const d = Math.hypot(anchor.x - wp.x, anchor.y - wp.y);
+      Object.assign(w, { state: 'anchored', carrier: null, anchor, length: Math.min(WINCH.maxLen, d + 0.3), reel: w.reel });
+      return;
+    }
+    if (w.state === 'anchored' && Math.hypot(w.anchor.x - a.x, w.anchor.y - (a.y + 0.8)) < WINCH.attachRange + 0.8) {
+      Object.assign(w, { state: 'carried', carrier: p.id, anchor: null });
+    }
+  }
+
+  #findAnchor(p) {
+    const a = p.avatar;
+    if ((a.lane || 0) === 1) {
+      const tree = this.trees.find(t => Math.abs(t.x - a.x) < WINCH.attachRange);
+      if (tree) return { x: tree.x, y: floorAt(this.floor, tree.x) + (tree.hp > 0 ? 1.0 : 0.3), kind: tree.hp > 0 ? 'tree' : 'stump', id: tree.id };
+      return null;
+    }
+    // Rock within reach of the hands.
+    const t = this.terrain;
+    for (let r = 0.3; r <= WINCH.attachRange; r += 0.3) {
+      for (let k = 0; k < 8; k++) {
+        const ang = (k / 8) * Math.PI * 2;
+        const x = a.x + Math.cos(ang) * r, y = a.y + 0.6 + Math.sin(ang) * r;
+        const ix = Math.round(x / CELL), iy = Math.round(y / CELL);
+        if (ix < 0 || iy < 0 || ix >= t.nx || iy >= t.ny) continue;
+        const i = iy * t.nx + ix;
+        if (t.rock[i] && t.density[i] > 127) return { x, y, kind: 'rock' };
+      }
+    }
+    return null;
+  }
+
+  #stepWinch(dt) {
+    const w = this.winch;
+    w.tension = 0;
+    if (w.state === 'carried') {
+      const q = this.players.get(w.carrier);
+      const wp = this.winchPoint();
+      if (!q || !q.connected || Math.hypot(q.avatar.x - wp.x, q.avatar.y - wp.y) > WINCH.maxLen + 2) this.#dropHook(q || { id: w.carrier });
+      return;
+    }
+    if (w.state !== 'anchored') return;
+    if (w.anchor.kind === 'rock') {
+      const t = this.terrain;
+      if (!t.solidAt(w.anchor.x, w.anchor.y)) { Object.assign(w, { state: 'stowed', anchor: null }); return; }   // rock dug away
+    }
+    const ch = this.camper.chassis;
+    const wpv = ch.getWorldPoint(Vec2(WINCH.x, WINCH.y));
+    const dx = w.anchor.x - wpv.x, dy = w.anchor.y - wpv.y, d = Math.hypot(dx, dy) || 1;
+    if (w.reel > 0) w.length = Math.max(1, w.length - WINCH.reel * dt);
+    if (w.reel < 0) w.length = Math.min(WINCH.maxLen, w.length + WINCH.reel * dt);
+    // Don't let reeling build up more stretch than the motor could hold.
+    w.length = Math.max(w.length, d - WINCH.force / WINCH.k);
+    if (d <= w.length) return;
+    const ux = dx / d, uy = dy / d;
+    const v = ch.getLinearVelocityFromWorldPoint(wpv);
+    const away = -(v.x * ux + v.y * uy);
+    const f = Math.min(WINCH.force, WINCH.k * (d - w.length) + WINCH.c * Math.max(0, away));
+    ch.applyForce(Vec2(ux * f, uy * f), wpv, true);
+    w.tension = f / WINCH.force;
   }
 
   step(dt) {
@@ -220,12 +730,16 @@ export class Sim {
     const ch = c.chassis;
     const ang = Math.atan2(Math.sin(ch.getAngle()), Math.cos(ch.getAngle()));
     const upright = Math.cos(ang);
-    if (upright < 0.15 && Math.abs(ch.getAngularVelocity()) < 1.5) this.tippedFor += dt; else if (upright > 0.6) this.tippedFor = 0;
-    this.tipped = this.tippedFor > 1.0;
+    // Tipped once it has lain over for a second; cleared only when nearly upright,
+    // so pushing continues until the camper is back on its wheels.
+    if (upright < 0.15 && Math.abs(ch.getAngularVelocity()) < 1.5) this.tippedFor += dt;
+    if (this.tippedFor > 1.0) this.tipped = true;
+    if (upright > 0.92) { this.tippedFor = 0; this.tipped = false; }
     let pushers = 0;
     const pos = ch.getPosition();
     for (const p of this.players.values()) {
-      if (p.pushing && p.connected && p.avatar.mode === 'out' && Math.hypot(p.avatar.x - pos.x, p.avatar.y - pos.y) < PUSH_RANGE) pushers++;
+      // A jack gives one traveller the leverage of three.
+      if (p.pushing && p.connected && p.avatar.mode === 'out' && Math.hypot(p.avatar.x - pos.x, p.avatar.y - pos.y) < PUSH_RANGE) pushers += this.toolOf(p) === 'jack' ? 3 : 1;
     }
     if (pushers && upright < 0.9) {
       // A deliberate, slow lever rather than a physical torque: one traveller
@@ -237,8 +751,19 @@ export class Sim {
       ch.applyForceToCenter(Vec2(0, -GRAVITY * this.camperMass() * (upright < -0.3 ? 1.0 : upright < 0.3 ? 0.75 : 0.4)), true);
     }
 
+    this.#stepLogs(dt);
+    this.#stepWinch(dt);
     this.world.step(dt, 8, 3);
+    if (this.structure.boards.size) {
+      const fallen = this.structure.step(dt, this.players.values());
+      if (fallen.length) this.outbox.push({ t: 'fx', kind: 'snap', n: fallen.length });
+    }
     if (this.tick % 15 === 0) this.#syncTerrainBodies();
+
+    if (this.tick % SLUMP_EVERY === 0 && this.terrain.active.size) {
+      const r = this.terrain.slump(this.wet, this.slumpBlocked);
+      for (let k = 0; k < r.indices.length; k++) { this.edits.set(r.indices[k], r.values[k]); this.pendingEdits.set(r.indices[k], r.values[k]); }
+    }
 
     if (this.pendingEdits.size) {
       this.outbox.push({ t: 'terrain', i: [...this.pendingEdits.keys()], v: [...this.pendingEdits.values()] });
@@ -254,11 +779,20 @@ export class Sim {
     return {
       t: 'snap', tick: this.tick,
       c: { x: round(p.x), y: round(p.y), a: round(ch.getAngle()), vx: round(v.x), vy: round(v.y), w, th: c.throttle, mass: Math.round(this.camperMass()) },
-      tipped: this.tipped, driver: d ? d.id : null,
+      tipped: this.tipped, driver: d ? d.id : null, wet: this.wet,
       players: [...this.players.values()].map(q => ({
         id: q.id, name: q.name, seat: q.seat, soil: round(q.soil), pushing: q.pushing, connected: q.connected,
-        a: { mode: q.avatar.mode, x: round(q.avatar.x), y: round(q.avatar.y), vx: round(q.avatar.vx), vy: round(q.avatar.vy), facing: q.avatar.facing, lx: round(q.avatar.lx), onGround: q.avatar.onGround, walkPhase: round(q.avatar.walkPhase) },
+        tool: q.tool, tools: q.tools, boards: q.boards, carrying: q.carrying,
+        a: { mode: q.avatar.mode, lane: q.avatar.lane || 0, x: round(q.avatar.x), y: round(q.avatar.y), vx: round(q.avatar.vx), vy: round(q.avatar.vy), facing: q.avatar.facing, lx: round(q.avatar.lx), onGround: q.avatar.onGround, walkPhase: round(q.avatar.walkPhase), working: !!q.avatar.working },
       })),
+      trees: this.trees.filter(t => t.hp < TREE_HP).map(t => [t.id, t.hp, t.fallDir, t.fellTick, t.lastHit || 0]),
+      logs: [...this.logs.values()].map(l => { const q = this.logPose(l); return { id: l.id, lane: l.lane, len: l.len, x: round(q.x), y: round(q.y), a: round(q.a), c: l.carriers.map(c => c.pid), saw: l.saw / SAW_WORK }; }),
+      piles: [...this.piles.values()].map(p => ({ id: p.id, lane: p.lane, x: round(p.x), y: round(p.y), n: p.n })),
+      rack: { boards: this.rack.boards, logs: this.rack.logs.map(round) },
+      structure: this.structure.snapshot(),
+      items: [...this.items.values()].map(it => ({ id: it.id, kind: it.kind, lane: it.lane, x: round(it.x), y: round(it.y) })),
+      toolbox: this.toolbox,
+      winch: { state: this.winch.state, carrier: this.winch.carrier, anchor: this.winch.anchor && { x: round(this.winch.anchor.x), y: round(this.winch.anchor.y), kind: this.winch.anchor.kind }, length: round(this.winch.length), reel: this.winch.reel, tension: round(this.winch.tension) },
     };
   }
 

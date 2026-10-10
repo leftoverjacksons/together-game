@@ -3,17 +3,35 @@
 Two-player co-op in the browser: drive a big off-road camper through procedural wilderness, reshape the ground to get it through, and (soon) rescue animals along the way.
 
 The design lives in [`docs/DESIGN.md`](docs/DESIGN.md). Update it when decisions change.
+Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md): drop images into `public/assets/` and list them in `manifest.json` to replace the code-drawn placeholders.
 
-## Status: milestone 1 (core loop)
+## Status: milestone 3 (timber, building, winch and tools)
 
-- A procedural stretch (seeded), with set pieces: ravines, hills, ledges, rock boulders, dips.
-- Editable terrain. Dig soil into your bucket and place it against the ground to build ramps or fill gaps. Rock cannot be dug.
-- The camper is a physics vehicle: chassis, two suspended wheels, four-wheel drive. Its interior is drawn as a cross-section, so you can walk around inside, take the wheel, and climb out by the door.
-- A tipped camper can be pushed upright by travellers standing beside it. It is slow alone and faster with two.
-- Online play for two, plus an offline practice mode where the simulation runs in your browser.
-- Soft vector art: a golden-hour sky, parallax hills and forest, layered soil and bedrock, grass, pollen, butterflies and birds.
+- **Terrain:**
+  - A procedural stretch with set pieces: ravines, hills, ledges, rock boulders, dips.
+  - Editable terrain: dig soil into your bucket and place it to build ramps or fill gaps. Rock cannot be dug.
+  - Disturbed soil settles into natural slopes, much faster in rain. Boards stop it.
+- **Camper:**
+  - A physics vehicle with stiff suspension and four-wheel drive. Its interior is drawn as a cross-section.
+  - It can be pushed upright when tipped.
+  - A roof rack (reached by the ladder at the front) stores boards and logs. The extra weight makes the camper heavier and more top-heavy.
+- **Forest lane** behind the road (W / S):
+  - Fell trees with the axe; it's faster with two.
+  - Haul logs: one player drags slowly, two carry at walking speed.
+  - Saw logs into boards.
+- **Building:**
+  - Place boards with the hammer. Boards join at joints and anchor to the ground.
+  - Structures are analysed for stress. Unsupported parts wobble and then fall; overstressed boards snap; a braced truss holds the camper.
+- **Sound:** synthesised effects, an engine, wind, rain and birdsong.
+- **Look:** layered painted-vector scenery (snowy peaks, haze, clouds, light shafts, deer, flowers) and particles.
+- **Modes:** online play for two, plus offline practice.
+- **Winch and tools (M3):**
+  - A winch station inside the camper; a lone driver can winch from the wheel.
+  - The hook goes from the front bumper to a tree, stump or rock.
+  - Three tool slots each; drop, pick up and hand over tools; a toolbox in the camper.
+  - Finds: a pickaxe (breaks rock) and a jack (one person pushes like three).
 
-Not yet: the winch, timber and building, items and loadouts, animals, storms and night, camps and the sanctuary, local co-op on one machine. See the milestones in the design doc.
+Not yet: animals and rescue, real weather and night, camps and the sanctuary, local co-op on one machine. See the milestones in the design doc.
 
 ## Run locally
 
@@ -32,10 +50,17 @@ To test co-op on one computer, open the second player in a different browser or 
 | Key | Action |
 | --- | --- |
 | A / D | Walk. At the wheel: drive forward / reverse |
-| W / Space | Jump. At the wheel: brake |
-| E | Climb aboard, take or leave the wheel, climb out. Hold beside a tipped camper to push it upright |
-| Left mouse (hold) | Dig soil into your bucket |
-| Right mouse (hold) | Place soil against the ground |
+| W / S | Step into the forest lane / back to the road. At the winch station: reel in / pay out |
+| Space | Jump. At the wheel: brake |
+| E | Use what is nearby: board the camper, stations (wheel, winch, toolbox), logs, boards, tools on the ground, roof rack; hold beside a tipped camper to push it upright |
+| Q | Winch hook: take it from the front bumper, hook it to a tree, stump or rock, unhook, stow. At the toolbox: next tool |
+| 1–3 / mouse wheel | Choose a tool slot |
+| Left mouse | Dig · chop · saw · break rock (pickaxe) · drag to place a board |
+| Right mouse | Place soil (shovel) · remove a board (hammer) |
+| F | Hand your tool to your partner |
+| G / B | Drop your tool / drop carried boards |
+| R | Toggle rain (testing) |
+| M | Sound on / off |
 | H | Controls panel |
 
 ## Deploy on Render
@@ -55,12 +80,14 @@ Trips live in memory. A redeploy, or the free instance sleeping after about 15 i
 
 ```
 shared/     simulation shared by server and browser
-  terrain.mjs     density grid, generation, dig/fill, marching squares
-  sim.mjs         planck.js world: camper, stations, tools, snapshots
-  character.mjs   on-foot movement against the terrain
+  terrain.mjs     density grid, generation, dig/fill, slumping, marching squares
+  sim.mjs         planck.js world: camper, stations, tools, timber, rack, snapshots
+  structure.mjs   boards, joints, frame analysis, breaking
+  forest.mjs      forest-lane floor, trees, logs
+  character.mjs   on-foot movement (road and forest lanes)
 server/     HTTP + WebSocket server, rooms, fixed-rate loop
 client/     browser game: sessions (online/offline), input, PixiJS renderer
-public/     index.html and styles
+public/     index.html, styles, assets/ (art slots: manifest.json + images)
 test/       node --test suites
 docs/       design document
 ```

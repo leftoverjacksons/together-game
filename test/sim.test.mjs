@@ -106,3 +106,63 @@ test('avatar walks on terrain and cannot leave the camper leash', () => {
   for (let i = 0; i < 60 * 12; i++) stepAvatar(a, t, { move: 1 }, 1 / 60, 25);
   assert.ok(a.x <= 25 + 30 + 1e-9);
 });
+
+test('tool slots: drop, pick up, hand over, and swap at the toolbox', () => {
+  const sim = new Sim(77);
+  const a = sim.addPlayer('a', 'A'), b = sim.addPlayer('b', 'B');
+  assert.deepEqual(a.tools, ['shovel', 'axe', 'hammer']);
+  assert.deepEqual(b.tools, ['shovel', 'saw', 'hammer']);
+  for (const p of [a, b]) Object.assign(p.avatar, { mode: 'out', lane: 0, x: 40, y: sim.terrain.groundY(40) });
+  sim.handle('a', { t: 'tool', i: 1 });
+  sim.handle('a', { t: 'droptool' });
+  assert.equal(a.tools[1], null);
+  const dropped = [...sim.items.values()].find(it => it.kind === 'axe' && Math.abs(it.x - 40) < 1);
+  assert.ok(dropped);
+  sim.handle('b', { t: 'tool', i: 0 });
+  sim.handle('b', { t: 'give' });                 // a has a free slot now
+  assert.equal(b.tools[0], null);
+  assert.equal(a.tools[1], 'shovel');
+  sim.handle('b', { t: 'pickup', id: dropped.id });
+  assert.equal(b.tools[0], 'axe');
+  // Toolbox: inside, at the toolbox, swap the hammer for a saw.
+  Object.assign(a.avatar, { mode: 'in', lx: INTERIOR.toolboxX });
+  sim.handle('a', { t: 'tool', i: 2 });
+  sim.handle('a', { t: 'toolbox', kind: 'saw' });
+  assert.equal(a.tools[2], 'saw');
+  assert.ok(sim.toolbox.includes('hammer') && !sim.toolbox.includes('saw'));
+});
+
+test('the right tool is needed: no chopping with a shovel, the pickaxe breaks rock', () => {
+  const sim = new Sim(77);
+  const p = sim.addPlayer('a', 'A');
+  const t = sim.terrain;
+  const ri = t.rock.findIndex((r, i) => r && t.density[i + t.nx] < 128 && Math.floor(i / t.nx) > 4);
+  const rx = (ri % t.nx) * 0.25, ry = Math.floor(ri / t.nx) * 0.25;
+  Object.assign(p.avatar, { mode: 'out', lane: 0, x: rx, y: ry + 0.3 });
+  const before = t.density[ri];
+  sim.handle('a', { t: 'dig', x: rx, y: ry });
+  assert.equal(t.density[ri], before, 'shovel cannot dig rock');
+  p.tools[0] = 'pickaxe';
+  for (let k = 0; k < 20; k++) { sim.handle('a', { t: 'dig', x: rx, y: ry }); run(sim, 0.1); }
+  assert.ok(t.density[ri] < before, 'pickaxe breaks rock');
+});
+
+test('winch: hook to a tree, reel in, and it pulls the camper', () => {
+  const sim = new Sim(1234);
+  const p = sim.addPlayer('a', 'A');
+  const wp = sim.winchPoint();
+  Object.assign(p.avatar, { mode: 'out', lane: 0, x: wp.x - 0.3, y: wp.y - 0.9 });
+  sim.handle('a', { t: 'hook' });
+  assert.equal(sim.winch.state, 'carried');
+  const tree = sim.trees.find(tr => tr.x > wp.x + 8);
+  Object.assign(p.avatar, { lane: 1, x: tree.x, y: sim.floor[Math.round(tree.x / 0.25)] });
+  sim.handle('a', { t: 'hook' });
+  assert.equal(sim.winch.state, 'anchored');
+  const x0 = sim.camper.chassis.getPosition().x;
+  Object.assign(p.avatar, { mode: 'in', lx: INTERIOR.winchX });
+  sim.handle('a', { t: 'seat', station: 'winch' });
+  assert.equal(p.seat, 'winch');
+  sim.handle('a', { t: 'winch', reel: 1 });
+  run(sim, 8);
+  assert.ok(sim.camper.chassis.getPosition().x - x0 > 2, 'camper moved toward the anchor');
+});

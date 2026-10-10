@@ -1,5 +1,9 @@
 import { Game } from './game.js';
 import { OnlineSession, LocalSession } from './session.js';
+import { Audio } from './audio.js';
+
+const audio = new Audio();
+addEventListener('pointerdown', () => { if (audio.ctx?.state === 'suspended') audio.ctx.resume(); });
 
 const $ = id => document.getElementById(id);
 const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
@@ -18,6 +22,12 @@ const hud = {
     el.dataset.state = s;
     if (s === 'error') { $('menu').hidden = false; fail(detail || 'Could not join.'); }
   },
+  toast(msg) {
+    const el = $('toast');
+    el.textContent = msg; el.hidden = false;
+    clearTimeout(this._toast);
+    this._toast = setTimeout(() => (el.hidden = true), 3200);
+  },
   joined(code) {
     $('menu').hidden = true;
     $('hud').hidden = false;
@@ -27,7 +37,12 @@ const hud = {
       history.replaceState(null, '', '?trip=' + code);
     }
   },
-  update({ prompt, soil, tipped, mass, players, myId }) {
+  update({ prompt, soil, tipped, mass, players, myId, tool, tools, boards, boardCap, rack, lane, wet }) {
+    const bar = tools.map((t, k) => `<span class="slot${k === tool ? ' on' : ''}"><i>${k + 1}</i>${t}</span>`).join('');
+    if (bar !== this._bar) { $('toolbar').innerHTML = bar; this._bar = bar; }
+    $('boards').textContent = `Boards ${boards}/${boardCap}`;
+    $('rack').textContent = rack ? 'Rack: ' + rack : '';
+    $('lane').textContent = lane + (wet ? ' · raining' : '');
     if (prompt !== this._prompt) { $('prompt').innerHTML = prompt; $('prompt').hidden = !prompt; this._prompt = prompt; }
     $('soil-fill').style.width = Math.round(soil * 100) + '%';
     $('tipped').hidden = !tipped;
@@ -40,13 +55,15 @@ const escape = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&l
 
 let game = null;
 function launch(session) {
+  audio.start();
   if (game) { game.session.close(); game.session = session; session.onmessage = m => game.onMessage(m); session.onstatus = (s, d) => hud.status(s, d); session.connect(); return; }
-  game = new Game(session, hud);
+  game = new Game(session, hud, audio);
   window.__together = game;   // debugging handle
   game.start($('stage'));
 }
 
 $('create').onclick = async () => {
+  audio.start();
   fail('');
   try {
     const r = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
@@ -56,12 +73,13 @@ $('create').onclick = async () => {
   } catch { fail('Could not reach the server.'); }
 };
 $('join').onclick = () => {
+  audio.start();
   fail('');
   const code = $('code').value.trim().toUpperCase();
   if (!/^[0-9A-F]{6}$/.test(code)) return fail('Trip codes are six letters and numbers.');
   launch(new OnlineSession(code, name()));
 };
-$('practice').onclick = () => { fail(''); launch(new LocalSession(name())); };
+$('practice').onclick = () => { audio.start(); fail(''); launch(new LocalSession(name())); };
 $('copy').onclick = async () => {
   const link = location.origin + '/?trip=' + $('trip-code').textContent;
   try { await navigator.clipboard.writeText(link); $('copy').textContent = 'Copied'; } catch { prompt('Invite link', link); }
