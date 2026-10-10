@@ -29,7 +29,7 @@ function feetBlocked(t, x, y) {
 export function stepAvatar(a, t, input, dt, camperX) {
   const move = Math.max(-1, Math.min(1, input.move || 0));
   if (move) a.facing = move > 0 ? 1 : -1;
-  const target = move * WALK;
+  const target = move * (input.speed ?? WALK);
   const acc = a.onGround ? ACCEL : AIR_ACCEL;
   const dv = target - a.vx;
   a.vx += Math.sign(dv) * Math.min(Math.abs(dv), acc * dt);
@@ -81,6 +81,25 @@ export function stepAvatar(a, t, input, dt, camperX) {
       }
     }
   }
+  if (a.onGround && Math.abs(a.vx) > 0.2) a.walkPhase += Math.abs(a.vx) * dt * 2.2;
+  return a;
+}
+
+// The forest lane: walk along a fixed floor height function.
+export function stepForest(a, floorY, input, dt, camperX) {
+  const move = Math.max(-1, Math.min(1, input.move || 0));
+  if (move) a.facing = move > 0 ? 1 : -1;
+  const dv = move * (input.speed ?? WALK) - a.vx;
+  a.vx += Math.sign(dv) * Math.min(Math.abs(dv), (a.onGround ? ACCEL : AIR_ACCEL) * dt);
+  if (input.jump && a.onGround) { a.vy = JUMP; a.onGround = false; }
+  a.vy = Math.max(MAX_FALL, a.vy + GRAV * dt);
+  a.x += a.vx * dt;
+  if (camperX !== undefined) a.x = Math.max(camperX - LEASH, Math.min(camperX + LEASH, a.x));
+  const g = floorY(a.x);
+  a.y += a.vy * dt;
+  const wasGround = a.onGround;
+  a.onGround = false;
+  if (a.y <= g || (wasGround && a.vy <= 0 && a.y - g < 0.4)) { a.y = g; a.vy = 0; a.onGround = true; }
   if (a.onGround && Math.abs(a.vx) > 0.2) a.walkPhase += Math.abs(a.vx) * dt * 2.2;
   return a;
 }

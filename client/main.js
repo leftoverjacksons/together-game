@@ -27,7 +27,12 @@ const hud = {
       history.replaceState(null, '', '?trip=' + code);
     }
   },
-  update({ prompt, soil, tipped, mass, players, myId }) {
+  update({ prompt, soil, tipped, mass, players, myId, tool, tools, boards, boardCap, rack, lane, wet }) {
+    const bar = tools.map((t, k) => `<span class="slot${k === tool ? ' on' : ''}"><i>${k + 1}</i>${t}</span>`).join('');
+    if (bar !== this._bar) { $('toolbar').innerHTML = bar; this._bar = bar; }
+    $('boards').textContent = `Boards ${boards}/${boardCap}`;
+    $('rack').textContent = rack ? 'Rack: ' + rack : '';
+    $('lane').textContent = lane + (wet ? ' · raining' : '');
     if (prompt !== this._prompt) { $('prompt').innerHTML = prompt; $('prompt').hidden = !prompt; this._prompt = prompt; }
     $('soil-fill').style.width = Math.round(soil * 100) + '%';
     $('tipped').hidden = !tipped;

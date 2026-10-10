@@ -15,7 +15,9 @@ export class CamperView {
     this.interior = new Container(); // travellers inside are added here
     this.front = new Graphics();     // frame, roof, bumper drawn over travellers
     this.glow = new Graphics();
-    this.body.addChild(this.back, this.interior, this.front, this.glow);
+    this.rack = new Graphics();
+    this.body.addChild(this.back, this.interior, this.front, this.rack, this.glow);
+    this.rackKey = '';
     this.root.addChild(this.body, this.arms, ...this.wheels);
     parent.addChild(this.root);
     this.#drawBody();
@@ -92,8 +94,8 @@ export class CamperView {
     f.rect(-3.3, 1.9, 6.45, 0.06).fill(PAL.stripe);
     for (let x = -2.9; x <= 2.5; x += 0.9) f.rect(x, 2.03, 0.08, 0.22).fill(0x4a4440);
     f.rect(-3.0, 2.2, 5.6, 0.06).fill(0x4a4440);                              // roof rack
-    f.roundRect(-2.6, 2.26, 1.6, 0.36, 0.06).fill(0x8d6b46);                  // stowed crate
-    f.roundRect(-0.8, 2.26, 1.0, 0.3, 0.06).fill(0x6d8a5a);
+    f.rect(3.0, -0.3, 0.06, 2.3).fill(0x4a4440);                              // ladder to the rack
+    for (let y = -0.1; y < 1.9; y += 0.32) f.rect(3.0, y, 0.22, 0.04).fill(0x4a4440);
     f.poly([-2.95, -0.62, 2.65, -0.62, 2.82, -0.42, -3.12, -0.42]).fill(PAL.bodyShade); // underbody skirt
     f.rect(-2.9, -0.56, 5.6, 0.08).fill(PAL.stripe);
     f.rect(-3.32, -0.05, 0.18, 1.9).fill(PAL.body);                           // rear pillar
@@ -101,6 +103,26 @@ export class CamperView {
     f.roundRect(3.05, -0.2, 0.42, 0.36, 0.08).fill(0x5a5450);                 // bumper / winch mount
     f.circle(3.32, 0.5, 0.13).fill(PAL.lamp);                                 // headlight
     f.rect(-3.42, 0.25, 0.14, 0.25).fill(0xd24b3f);                           // taillight
+  }
+
+  // Lumber on the roof rack: board stacks at the back, logs at the front.
+  setRack(rack) {
+    const key = rack.boards + ':' + rack.logs.join(',');
+    if (key === this.rackKey) return;
+    this.rackKey = key;
+    const g = this.rack.clear();
+    const layers = Math.ceil(rack.boards / 3);
+    for (let k = 0; k < layers; k++) {
+      const y = 2.26 + k * 0.075;
+      g.roundRect(-3.0 + (k % 2) * 0.06, y, 2.7, 0.07, 0.02).fill(k % 2 ? PAL.woodLight : PAL.wood);
+      g.roundRect(-3.0 + (k % 2) * 0.06, y, 2.7, 0.07, 0.02).stroke({ width: 0.012, color: PAL.woodDark });
+    }
+    if (layers) g.rect(-2.1, 2.24, 0.05, layers * 0.075 + 0.04).rect(-0.9, 2.24, 0.05, layers * 0.075 + 0.04).fill(0xc2563f); // straps
+    rack.logs.forEach((len, k) => {
+      const L = Math.min(len, 3.6), cx = 0.95, y = 2.47 + k * 0.4;
+      g.roundRect(cx - L / 2, y - 0.2, L, 0.4, 0.18).fill(k % 2 ? 0x6e4a31 : 0x7a5236);
+      g.ellipse(cx + L / 2, y, 0.09, 0.2).fill(0xe0bb89);
+    });
   }
 
   // camper: interpolated {x, y, a, w: [x, y, a, x, y, a]}

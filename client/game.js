@@ -1,20 +1,26 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import { Terrain } from '../shared/terrain.mjs';
-import { newAvatar, stepAvatar } from '../shared/character.mjs';
-import { INTERIOR, STATION_RANGE, DOOR_RANGE, REACH, BRUSH_RADIUS, SOIL_CAPACITY, SNAPSHOT_HZ } from '../shared/constants.mjs';
+import { newAvatar, stepAvatar, stepForest } from '../shared/character.mjs';
+import {
+  INTERIOR, STATION_RANGE, DOOR_RANGE, REACH, BRUSH_RADIUS, SOIL_CAPACITY, SNAPSHOT_HZ, TOOLS, BOARD_CARRY,
+  RACK_POINT, RACK_RANGE, WORK_RANGE, CARRY_SPEED, RACK_BOARDS, RACK_LOGS,
+} from '../shared/constants.mjs';
+import { forestFloor, floorAt, generateTrees } from '../shared/forest.mjs';
 import { Input } from './input.js';
 import { Background, Foreground } from './render/background.js';
 import { TerrainView } from './render/terrainView.js';
 import { CamperView } from './render/camperView.js';
 import { AvatarView } from './render/avatarView.js';
+import { ForestView, LumberView } from './render/forestView.js';
 import { Ambience } from './render/ambience.js';
 import { PAL } from './render/palette.js';
 
 const INTERP_DELAY = 110;          // ms behind the newest snapshot
 const SEND_INTERVAL = 1000 / SNAPSHOT_HZ;
-const TOOL_INTERVAL = 80;
+const TOOL_INTERVAL = { shovel: 80, axe: 300, saw: 100 };
 const WALK_INSIDE = 2.6;
 const PUSH_RANGE = 4.5;
+const TOOL_NAMES = { shovel: 'Shovel', axe: 'Axe', saw: 'Saw', hammer: 'Hammer' };
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const lerpAngle = (a, b, t) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * t; };
@@ -26,6 +32,7 @@ export class Game {
     this.snaps = [];
     this.views = new Map();          // player id -> AvatarView
     this.me = null;
+    this.tool = 0;
     this.lastSend = 0; this.lastTool = 0; this.lastDrive = { throttle: 0, brake: false, at: 0 };
     this.pushing = false;
     this.cam = { x: 22, y: 18, viewH: 18 };
@@ -49,8 +56,12 @@ export class Game {
     this.bg = new Background(stage, length, seed);
     this.world = new Container();
     stage.addChild(this.world);
+    // Back to front: forest lane, road cross-section, camper, road items, travellers, grass.
+    this.forestView = new ForestView(this.world, this.terrain, this.floor, this.trees);
+    this.forestLumber = new LumberView(this.forestView.items);
     this.terrainView = new TerrainView(this.world, this.terrain);
     this.camperView = new CamperView(this.world);
+    this.roadLumber = new LumberView(this.world);
     this.outside = new Container();
     this.world.addChild(this.outside);
     this.world.addChild(this.terrainView.grass);   // grass rim over feet and wheels
@@ -70,12 +81,16 @@ export class Game {
       case 'welcome': {
         this.myId = msg.id;
         const first = !this.terrain;
-        if (first) this.terrain = new Terrain(msg.length, msg.seed);
+        if (first) {
+          this.terrain = new Terrain(msg.length, msg.seed);
+          this.floor = forestFloor(this.terrain);
+          this.trees = generateTrees(this.terrain, msg.seed);
+        }
         this.terrain.applyEdits(msg.edits.i, msg.edits.v);
         if (first) this.#buildScene(msg.seed, msg.length);
         this.snaps = [{ time: performance.now(), s: msg.snap }];
         const mine = msg.snap.players.find(p => p.id === msg.id);
-        if (!this.me) this.me = Object.assign(newAvatar(0, 0), mine ? mine.a : {});
+        if (!this.me) { this.me = Object.assign(newAvatar(0, 0), mine ? mine.a : {}); this.tool = mine?.tool || 0; }
         this.hud.joined(msg.code || null);
         break;
       }
@@ -100,10 +115,16 @@ export class Game {
     const players = b.s.players.map(pb => {
       const pa = a.s.players.find(p => p.id === pb.id) || pb;
       const A = pa.a, B = pb.a;
-      const same = A.mode === B.mode;
+      const same = A.mode === B.mode && A.lane === B.lane;
       return { ...pb, a: { ...B, x: same ? lerp(A.x, B.x, t) : B.x, y: same ? lerp(A.y, B.y, t) : B.y, lx: same ? lerp(A.lx, B.lx, t) : B.lx, walkPhase: lerp(A.walkPhase, B.walkPhase, t) } };
     });
-    return { camper, players, tipped: b.s.tipped, driver: b.s.driver, latest: S[S.length - 1].s };
+    const logs = (b.s.logs || []).map(lb => {
+      const la = (a.s.logs || []).find(l => l.id === lb.id);
+      if (!la || la.lane !== lb.lane) return lb;
+      return { ...lb, x: lerp(la.x, lb.x, t), y: lerp(la.y, lb.y, t), a: lerpAngle(la.a, lb.a, t) };
+    });
+    const tick = a.s.tick + (b.s.tick - a.s.tick) * t;
+    return { camper, players, logs, tick, tipped: b.s.tipped, driver: b.s.driver, latest: S[S.length - 1].s };
   }
 
   #camperPoint(c, lx, ly) {
@@ -111,37 +132,52 @@ export class Game {
     return { x: c.x + lx * ca - ly * sa, y: c.y + lx * sa + ly * ca };
   }
 
+  #selectTool(i) {
+    if (i === this.tool || i < 0 || i >= TOOLS.length) return;
+    this.tool = i;
+    this.session.send({ t: 'tool', i });
+  }
+
   frame(dt) {
     if (!this.terrain || !this.me) return;
     this.time += dt;
     const now = performance.now();
     const view = this.#sampled(now);
+    const latest = view.latest;
     const c = view.camper;
-    const latestMe = view.latest.players.find(p => p.id === this.myId);
+    const latestMe = latest.players.find(p => p.id === this.myId);
     const seated = latestMe?.seat === 'cab';
     const inp = this.input;
     const me = this.me;
     let prompt = '';
     let working = false;
 
-    const door = this.#camperPoint(c, INTERIOR.doorX, INTERIOR.floorY);
+    for (let k = 0; k < TOOLS.length; k++) if (inp.hit(String(k + 1))) this.#selectTool(k);
+    if (inp.wheel) { this.#selectTool((this.tool + Math.sign(inp.wheel) + TOOLS.length) % TOOLS.length); inp.wheel = 0; }
+    if (inp.hit('r')) this.session.send({ t: 'weather', wet: !latest.wet });
     const eHit = inp.hit('e');
-    if (inp.hit('r')) this.session.send({ t: 'weather', wet: !view.latest.wet });
+    const door = this.#camperPoint(c, INTERIOR.doorX, INTERIOR.floorY);
+
     if (me.mode === 'out') {
       const move = (inp.held('d', 'arrowright') ? 1 : 0) - (inp.held('a', 'arrowleft') ? 1 : 0);
-      stepAvatar(me, this.terrain, { move, jump: inp.held('w', ' ', 'arrowup') }, dt, c.x);
-      const nearDoor = Math.hypot(me.x - door.x, me.y - door.y) < DOOR_RANGE;
-      const nearCamper = Math.hypot(me.x - c.x, me.y + 0.8 - c.y) < PUSH_RANGE;
-      let push = false;
-      if (view.tipped && nearCamper) {
-        prompt = 'Hold <b>E</b> to push the camper upright';
-        push = inp.held('e');
-      } else if (nearDoor) {
-        prompt = '<b>E</b> climb aboard';
-        if (eHit) { me.mode = 'in'; me.lx = INTERIOR.doorX + 0.35; me.vx = 0; }
-      }
+      const carried = latestMe?.carrying != null ? (latest.logs || []).find(l => l.id === latestMe.carrying) : null;
+      const speed = carried ? CARRY_SPEED[Math.min(1, carried.c.length - 1)] : undefined;
+      // Step between the road and the forest behind it.
+      if (inp.hit('w', 'arrowup') && me.lane !== 1) { me.lane = 1; me.y = floorAt(this.floor, me.x); me.vy = 0; me.onGround = true; }
+      else if (inp.hit('s', 'arrowdown') && me.lane === 1) { me.lane = 0; me.y = this.terrain.groundY(me.x, floorAt(this.floor, me.x) + 1.5); me.vy = 0; }
+      const input = { move, jump: inp.held(' '), speed };
+      if (me.lane === 1) stepForest(me, x => floorAt(this.floor, x), input, dt, c.x);
+      else stepAvatar(me, this.terrain, input, dt, c.x);
+
+      const ctx = this.#context(view, latestMe, door, carried);
+      prompt = ctx.prompt;
+      if (eHit && ctx.action) ctx.action();
+      const push = !!ctx.push && inp.held('e');
       if (push !== this.pushing) { this.pushing = push; this.session.send({ t: 'push', on: push }); }
-      working = this.#tools(now, latestMe);
+      if (inp.hit('g') && latestMe?.boards) this.session.send({ t: 'drop' });
+      const used = this.#tools(now, view, latestMe);
+      working = used.working;
+      if (!prompt && used.hint) prompt = used.hint;
     } else {
       if (this.pushing) { this.pushing = false; this.session.send({ t: 'push', on: false }); }
       const move = (inp.held('d', 'arrowright') ? 1 : 0) - (inp.held('a', 'arrowleft') ? 1 : 0);
@@ -169,20 +205,85 @@ export class Game {
           prompt = '<b>E</b> climb out';
           if (eHit) {
             const out = this.#camperPoint(c, INTERIOR.doorX - 0.2, INTERIOR.floorY + 0.05);
-            Object.assign(me, { mode: 'out', x: out.x, y: out.y, vx: c.vx, vy: 1.5, onGround: false });
+            Object.assign(me, { mode: 'out', lane: 0, x: out.x, y: out.y, vx: c.vx, vy: 1.5, onGround: false });
           }
-        } else prompt = '<b>A / D</b> walk · stations are lit when you are close';
+        } else prompt = '<b>A / D</b> walk';
       }
     }
 
     if (now - this.lastSend > SEND_INTERVAL) {
       this.lastSend = now;
-      this.session.send({ t: 'avatar', a: { mode: me.mode, x: me.x, y: me.y, vx: me.vx, vy: me.vy, facing: me.facing, lx: me.lx, onGround: me.onGround, walkPhase: me.walkPhase } });
+      this.session.send({ t: 'avatar', a: { mode: me.mode, lane: me.lane || 0, x: me.x, y: me.y, vx: me.vx, vy: me.vy, facing: me.facing, lx: me.lx, onGround: me.onGround, walkPhase: me.walkPhase, working } });
     }
 
-    this.#render(dt, view, { working, seated });
-    this.hud.update({ prompt, soil: (latestMe?.soil || 0) / SOIL_CAPACITY, tipped: view.tipped, mass: c.mass, players: view.latest.players, myId: this.myId });
+    this.#render(dt, view, { working });
+    this.hud.update({
+      prompt, soil: (latestMe?.soil || 0) / SOIL_CAPACITY, tipped: view.tipped, mass: c.mass, players: latest.players, myId: this.myId,
+      tool: this.tool, tools: TOOLS.map(t => TOOL_NAMES[t]), boards: latestMe?.boards || 0, boardCap: BOARD_CARRY,
+      rack: latest.rack ? `${latest.rack.boards}/${RACK_BOARDS} boards · ${latest.rack.logs.length}/${RACK_LOGS} logs` : '',
+      lane: me.mode === 'out' ? (me.lane === 1 ? 'Forest' : 'Road') : 'Camper', wet: latest.wet,
+    });
     inp.endFrame();
+  }
+
+  // What E does right now, by priority.
+  #context(view, latestMe, door, carried) {
+    const me = this.me, c = view.camper, latest = view.latest;
+    const lane = me.lane || 0;
+    if (lane === 0 && view.tipped && Math.hypot(me.x - c.x, me.y + 0.8 - c.y) < PUSH_RANGE) return { prompt: 'Hold <b>E</b> to push the camper upright', push: true };
+    const send = msg => () => this.session.send(msg);
+    if (carried) {
+      if (lane === 0 && this.#atRack(c)) return { prompt: '<b>E</b> load the log onto the roof rack', action: send({ t: 'stow' }) };
+      const alone = carried.c.length < 2;
+      return { prompt: `${alone ? 'Hauling alone (slow)' : 'Carrying together'} · <b>E</b> let go${lane === 1 && alone ? ' · <b>S</b> bring it to the road' : ''}`, action: send({ t: 'release' }) };
+    }
+    if (lane === 0 && Math.hypot(me.x - door.x, me.y - door.y) < DOOR_RANGE) return { prompt: '<b>E</b> climb aboard', action: () => { Object.assign(me, { mode: 'in', lx: INTERIOR.doorX + 0.35, vx: 0 }); } };
+    if (lane === 0 && this.#atRack(c)) {
+      const boards = latestMe?.boards || 0, rack = latest.rack || { boards: 0, logs: [] };
+      if (boards) return { prompt: `<b>E</b> stow ${boards} board${boards > 1 ? 's' : ''} on the roof rack`, action: send({ t: 'stow' }) };
+      if (rack.boards) return { prompt: '<b>E</b> take boards from the roof rack', action: send({ t: 'unstow' }) };
+      if (rack.logs.length) return { prompt: '<b>E</b> unload a log from the roof rack', action: send({ t: 'unstow' }) };
+    }
+    const log = this.#nearestLog(view, lane);
+    if (log) {
+      const n = log.c.length;
+      if (n < 2) return { prompt: n ? '<b>E</b> grab the other end' : '<b>E</b> pick up the log', action: send({ t: 'grab', id: log.id }) };
+    }
+    const pile = (latest.piles || []).find(p => p.lane === lane && Math.abs(p.x - me.x) < WORK_RANGE);
+    if (pile && (latestMe?.boards || 0) < BOARD_CARRY) return { prompt: `<b>E</b> pick up boards (${pile.n} here)`, action: send({ t: 'take', id: pile.id }) };
+    return { prompt: '' };
+  }
+
+  #atRack(c) {
+    const r = this.#camperPoint(c, RACK_POINT.x, RACK_POINT.y);
+    return Math.hypot(this.me.x - r.x, this.me.y + 0.8 - r.y) < RACK_RANGE + 0.6;
+  }
+
+  #nearestLog(view, lane) {
+    const me = this.me;
+    let best = null, bd = WORK_RANGE;
+    for (const l of view.logs) {
+      if (l.lane !== lane) continue;
+      const ca = Math.cos(l.a), sa = Math.sin(l.a);
+      const px = me.x - l.x, py = me.y + 0.5 - l.y;
+      const along = Math.max(-l.len / 2, Math.min(l.len / 2, px * ca + py * sa));
+      const d = Math.hypot(px - along * ca, py - along * sa);
+      if (d < bd) { bd = d; best = l; }
+    }
+    return best;
+  }
+
+  #nearestTree(view) {
+    const me = this.me;
+    if (me.lane !== 1) return null;
+    const state = new Map((view.latest.trees || []).map(t => [t[0], t]));
+    let best = null;
+    for (const t of this.trees) {
+      const st = state.get(t.id);
+      if (st && st[1] <= 0) continue;
+      if (Math.abs(t.x - me.x) < WORK_RANGE && (!best || Math.abs(t.x - me.x) < Math.abs(best.x - me.x))) best = t;
+    }
+    return best;
   }
 
   #mouseWorld() {
@@ -191,21 +292,44 @@ export class Game {
     return { x: (this.input.mouse.x - w / 2) / ppm + this.cam.x, y: (h / 2 - this.input.mouse.y) / ppm + this.cam.y };
   }
 
-  #tools(now, latestMe) {
-    const m = this.input.mouse;
-    if (!m.left && !m.right) return false;
-    const p = this.#mouseWorld();
-    const me = this.me;
-    if (Math.hypot(p.x - me.x, p.y - (me.y + 0.9)) > REACH) return false;
-    if (now - this.lastTool > TOOL_INTERVAL) {
-      this.lastTool = now;
-      this.session.send({ t: m.left ? 'dig' : 'fill', x: p.x, y: p.y });
+  #tools(now, view, latestMe) {
+    const m = this.input.mouse, me = this.me;
+    const tool = TOOLS[this.tool];
+    const lane = me.lane || 0;
+    if (latestMe?.carrying != null) return { working: false };
+    const every = TOOL_INTERVAL[tool] || 100;
+    const ready = now - this.lastTool > every;
+    if (tool === 'shovel') {
+      if (lane === 1) return { working: false, hint: m.left || m.right ? 'The forest floor can\'t be dug · <b>S</b> back to the road' : '' };
+      if (!m.left && !m.right) return { working: false };
+      const p = this.#mouseWorld();
+      if (Math.hypot(p.x - me.x, p.y - (me.y + 0.9)) > REACH) return { working: false };
+      if (Math.abs(p.x - me.x) > 0.2) me.facing = p.x > me.x ? 1 : -1;
+      if (ready) { this.lastTool = now; this.session.send({ t: m.left ? 'dig' : 'fill', x: p.x, y: p.y }); }
+      return { working: true };
     }
-    if (Math.abs(p.x - me.x) > 0.2) me.facing = p.x > me.x ? 1 : -1;
-    return true;
+    if (tool === 'axe') {
+      const tree = this.#nearestTree(view);
+      if (!tree) return { working: false, hint: lane === 0 ? '<b>W</b> step into the forest to fell trees' : '' };
+      if (!m.left) return { working: false, hint: 'Hold <b>left mouse</b> to chop · faster together' };
+      me.facing = tree.x > me.x ? 1 : -1;
+      if (ready) { this.lastTool = now; this.session.send({ t: 'chop' }); }
+      return { working: true };
+    }
+    if (tool === 'saw') {
+      const log = this.#nearestLog(view, lane);
+      if (!log) return { working: false };
+      if (!m.left) return { working: false, hint: 'Hold <b>left mouse</b> to saw the log into boards' };
+      me.facing = log.x > me.x ? 1 : -1;
+      if (ready) { this.lastTool = now; this.session.send({ t: 'saw' }); }
+      return { working: true };
+    }
+    return this.#hammer(now, view, latestMe);
   }
 
-  #render(dt, view, { working, seated }) {
+  #hammer() { return { working: false }; }
+
+  #render(dt, view, { working }) {
     const { width: w, height: h } = this.app.screen;
     const c = view.camper;
     const me = this.me;
@@ -234,8 +358,14 @@ export class Game {
     this.refY = this.refY === undefined ? ground : this.refY + (ground - this.refY) * k * 0.5;
     this.bg.update(this.cam.x, this.cam.y, ppm, this.refY);
     this.fg.update(this.cam.x, w, h, ppm);
+    const treeState = new Map((view.latest.trees || []).map(t => [t[0], t]));
+    this.forestView.update(this.cam.x - halfW, this.cam.x + halfW, treeState, view.tick, this.time);
     this.terrainView.update(this.cam.x - halfW, this.cam.x + halfW, this.cam.y - halfH, this.cam.y + halfH);
     this.camperView.update(c, this.time);
+    if (view.latest.rack) this.camperView.setRack(view.latest.rack);
+    const piles = view.latest.piles || [];
+    this.forestLumber.update(view.logs.filter(l => l.lane === 1), piles.filter(p => p.lane === 1));
+    this.roadLumber.update(view.logs.filter(l => l.lane === 0), piles.filter(p => p.lane === 0));
 
     // Travellers.
     view.players.forEach((p, index) => {
@@ -244,22 +374,26 @@ export class Game {
       const isMe = p.id === this.myId;
       const a = isMe ? me : p.a;
       const inside = a.mode === 'in';
-      const parent = inside ? this.camperView.interior : this.outside;
+      const parent = inside ? this.camperView.interior : a.lane === 1 ? this.forestView.actors : this.outside;
       if (v.root.parent !== parent) parent.addChild(v.root);
       v.root.visible = p.connected || isMe;
       const pos = inside ? { x: a.lx, y: INTERIOR.floorY } : { x: a.x, y: a.y };
-      v.update({ ...a, ...pos }, this.time, { working: isMe ? working : false, inside, seated: p.seat === 'cab', pushing: p.pushing });
+      v.update({ ...a, ...pos }, this.time, {
+        working: isMe ? working : !!p.a.working, inside, seated: p.seat === 'cab', pushing: p.pushing,
+        tool: TOOLS[isMe ? this.tool : p.tool] || 'shovel', boards: p.boards || 0, carrying: p.carrying != null,
+      });
     });
     for (const [id, v] of this.views) if (!view.players.some(p => p.id === id)) { v.root.destroy({ children: true }); this.views.delete(id); }
 
-    // Brush cursor.
+    // Shovel brush cursor.
     this.cursor.clear();
-    if (me.mode === 'out' && this.input.mouse.inside) {
+    if (me.mode === 'out' && (me.lane || 0) === 0 && TOOLS[this.tool] === 'shovel' && this.input.mouse.inside) {
       const p = this.#mouseWorld();
       const ok = Math.hypot(p.x - me.x, p.y - (me.y + 0.9)) <= REACH;
       this.cursor.circle(p.x, p.y, BRUSH_RADIUS).stroke({ width: 0.05, color: ok ? 0xfff3d6 : 0xd06a50, alpha: ok ? 0.85 : 0.5 });
       if (!ok) this.cursor.circle(me.x, me.y + 0.9, REACH).stroke({ width: 0.03, color: 0xfff3d6, alpha: 0.18 });
     }
+    this.drawExtras?.(view);
     this.ambience.update(dt, this.time, w, h, this.cam.x, x => this.terrain.groundY(x, this.cam.y + halfH));
   }
 }

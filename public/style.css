@@ -37,3 +37,9 @@ button.quiet { border-color: transparent; background: transparent; text-decorati
 #help td { padding: 3px 10px 3px 0; vertical-align: top; }
 #help td:first-child { font-weight: 700; white-space: nowrap; }
 @media (max-width: 640px) { #top-left, #top-right { font-size: 12px; padding: 8px 10px; } .bar { width: 80px; } #prompt { font-size: 13px; white-space: normal; text-align: center; width: calc(100vw - 32px); } }
+#toolbar { position: absolute; left: 12px; bottom: 16px; display: flex; gap: 6px; }
+#toolbar .slot { padding: 6px 10px; border-radius: 10px; background: rgba(251, 243, 228, 0.82); font-size: 13px; border: 2px solid transparent; }
+#toolbar .slot.on { border-color: var(--accent); background: #fffaf1; font-weight: 700; }
+#toolbar .slot i { font-style: normal; opacity: 0.55; margin-right: 5px; font-size: 11px; }
+#boards, #rack, #lane { font-size: 12px; opacity: 0.8; }
+@media (max-width: 640px) { #toolbar { bottom: 70px; } #toolbar .slot { padding: 4px 7px; font-size: 11px; } }
