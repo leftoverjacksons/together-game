@@ -21,6 +21,8 @@ import { AnimalView } from './render/animalView.js';
 import { ANIMALS, RIDE_SPOTS, RESCUE_RANGE } from '../shared/animals.mjs';
 import { Ambience } from './render/ambience.js';
 import { Particles } from './render/particles.js';
+import { Lighting, ambientColor } from './render/lighting.js';
+import { daylight, phaseName } from '../shared/weather.mjs';
 import { PAL } from './render/palette.js';
 
 const INTERP_DELAY = 110;          // ms behind the newest snapshot
@@ -100,6 +102,7 @@ export class Game {
     this.cursor = new Graphics();
     this.world.addChild(this.cursor);
     this.fg = new Foreground(stage, length, seed);
+    this.lighting = new Lighting(this.app.renderer, stage);   // darkness over the scene, stars over the darkness
     this.weather = new Graphics();
     stage.addChild(this.weather, this.screenFx);
     this.rainDrops = Array.from({ length: 160 }, () => ({ x: Math.random(), y: Math.random(), s: 0.6 + Math.random() * 0.8 }));
@@ -225,7 +228,8 @@ export class Game {
     this.myTool = this.#toolKind(latestMe);
     if (inp.hit('f') && this.myTool) this.session.send({ t: 'give' });
     if (inp.hit('tab', 'i')) this.inventory.toggle();
-    if (inp.hit('r')) this.session.send({ t: 'weather', wet: !latest.wet });
+    if (inp.hit('r')) this.session.send({ t: 'weather', wet: (latest.storm || 0) < 0.5 });
+    if (inp.hit('n')) this.session.send({ t: 'skipTime' });
     if (inp.hit('m') && this.audio) this.hud.toast(this.audio.toggleMute() ? 'Sound off (M)' : 'Sound on (M)');
     const eHit = inp.hit('e');
     const door = this.#camperPoint(c, INTERIOR.doorX, INTERIOR.floorY);
@@ -238,7 +242,7 @@ export class Game {
       if (inp.hit('w', 'arrowup') && me.lane !== 1) { me.lane = 1; me.y = floorAt(this.floor, me.x); me.vy = 0; me.onGround = true; }
       else if (inp.hit('s', 'arrowdown') && me.lane === 1) { me.lane = 0; me.y = this.terrain.groundY(me.x, floorAt(this.floor, me.x) + 1.5); me.vy = 0; }
       if (me.lane === 1 || this.myTool !== 'hammer') this.build = null;
-      const input = { move, jump: inp.held(' '), speed };
+      const input = { move, jump: inp.held(' '), speed, grip: 1 - 0.55 * (latest.storm || 0) };   // slick in the rain
       if (me.lane === 1) stepForest(me, x => floorAt(this.floor, x), input, dt, c.x);
       else stepAvatar(me, this.collider, input, dt, c.x);
 
@@ -332,7 +336,7 @@ export class Game {
       prompt, soil: (latestMe?.soil || 0) / SOIL_CAPACITY, tipped: view.tipped, mass: c.mass, players: latest.players, myId: this.myId,
       tool: this.tool, tools: Array.from({ length: TOOL_SLOTS }, (_, k) => { const kind = latestMe?.tools?.[k]; return { name: kind ? TOOL_NAMES[kind] : 'Empty', icon: kind ? this.toolIcons?.[kind] : '' }; }), boards: latestMe?.boards || 0, boardCap: BOARD_CARRY,
       rack: latest.rack ? `${latest.rack.boards}/${RACK_BOARDS} boards · ${latest.rack.logs.length}/${RACK_LOGS} logs` : '',
-      lane: me.mode === 'out' ? (me.lane === 1 ? 'Forest' : 'Road') : 'Camper', wet: latest.wet,
+      lane: (me.mode === 'out' ? (me.lane === 1 ? 'Forest' : 'Road') : 'Camper') + ' · ' + phaseName(latest.tod ?? 0.3) + ((latest.storm || 0) > 0.6 ? ' · storm' : (latest.storm || 0) > 0.05 ? ' · rain' : ''), wet: false,
       rescued: latest.rescued || 0, helping: (latest.animals || []).filter(a => a.help).map(a => a.kind),
     });
     inp.endFrame();
@@ -561,8 +565,13 @@ export class Game {
     const latest = view.latest, now = this.time;
     A.listenerX = this.cam.x;
     A.setEngine(!!view.driver, Math.abs(latest.c.th || 0), view.camper.vx, view.camper.x);
-    A.setRain(!!latest.wet);
-    A.tick(!!latest.wet);
+    const storm = latest.storm || 0, day = daylight(latest.tod ?? 0.3);
+    A.setRain(storm);
+    A.tick({ day, storm });
+    if (latest.lightning && latest.lightning !== this.lastThunder) {
+      if (this.lastThunder !== undefined) A.thunder(0.4 + Math.random() * 1.6);
+      this.lastThunder = latest.lightning;
+    }
     this.sfx = this.sfx || { fallen: null, boards: null, steps: new Map(), partner: new Map(), creak: 0 };
     const S = this.sfx;
     const fallen = new Set((latest.trees || []).filter(t => t[1] <= 0).map(t => t[0]));
@@ -589,20 +598,20 @@ export class Game {
     }
   }
 
-  // Rain: a cool grade over the scene and slanting streaks.
-  #weather(dt, w, h, wet) {
-    this.rainAmt = (this.rainAmt || 0) + ((wet ? 1 : 0) - (this.rainAmt || 0)) * Math.min(1, dt * 0.8);
+  // Rain: slanting streaks, heavier as the storm builds (the lightmap darkens the scene).
+  #weather(dt, w, h, storm) {
+    this.rainAmt = (this.rainAmt || 0) + (storm - (this.rainAmt || 0)) * Math.min(1, dt * 2);
     const g = this.weather.clear();
-    if (this.rainAmt < 0.01) return;
-    g.rect(0, 0, w, h).fill({ color: 0x5d6f86, alpha: 0.22 * this.rainAmt });
-    for (const d of this.rainDrops) {
+    if (this.rainAmt < 0.02) return;
+    const count = Math.round(this.rainDrops.length * Math.min(1, this.rainAmt * 1.3));
+    for (const d of this.rainDrops.slice(0, count)) {
       d.y += dt * 1.6 * d.s; d.x -= dt * 0.25 * d.s;
       if (d.y > 1) { d.y -= 1; d.x = Math.random() * 1.2; }
       if (d.x < -0.1) d.x += 1.2;
       const x = d.x * w, y = d.y * h, L = 18 * d.s;
       g.moveTo(x, y).lineTo(x - L * 0.25, y + L);
     }
-    g.stroke({ width: 1.2, color: 0xdfe8f2, alpha: 0.45 * this.rainAmt });
+    g.stroke({ width: 1.4, color: 0xdfe8f2, alpha: 0.6 * this.rainAmt });
   }
 
   // Particles for work done by anyone: driven by the same cues as sounds.
@@ -707,6 +716,48 @@ export class Game {
     g.circle(b.x, b.y, 0.09).stroke({ width: 0.04, color: 0x6f777c });
   }
 
+  // Lights for the night: headlamps, headlights, the lantern, the fox's eyes, fireflies.
+  #light(view, w, h, ppm, day, storm) {
+    const c = view.camper, me = this.me, night = 1 - day;
+    const S = (x, y) => ({ x: (x - this.cam.x) * ppm + w / 2, y: h / 2 - (y - this.cam.y) * ppm });
+    if (view.latest.lightning && view.latest.lightning !== this.lastFlash) { if (this.lastFlash !== undefined) this.flashAt = this.time; this.lastFlash = view.latest.lightning; }
+    const ft = this.time - (this.flashAt ?? -9);
+    const flash = ft < 0.08 ? 1 : ft < 0.16 ? 0.2 : ft < 0.26 ? 0.8 : Math.max(0, 0.6 - ft * 2);
+    const lights = [];
+    if (night > 0.02 || storm > 0.2) {
+      const strength = Math.max(night, storm * 0.6);
+      for (const p of view.players) {
+        const a = p.id === this.myId ? me : p.a;
+        if (!(p.connected || p.id === this.myId) || a.mode !== 'out') continue;
+        const f = a.facing || 1, head = S(a.x + f * 0.2, a.y + 1.47);
+        lights.push({ kind: 'glow', ...head, r: 1.1 * ppm, alpha: 0.55 * strength, color: 0xfff3d6 });
+        lights.push({ kind: 'cone', ...head, len: 10 * ppm, angle: f > 0 ? 0.14 : Math.PI - 0.14, alpha: 0.9 * strength, color: 0xfff3d6 });
+      }
+      const lamp = this.#camperPoint(c, 3.32, 0.5), dir = -c.a + 0.06;
+      lights.push({ kind: 'cone', ...S(lamp.x, lamp.y), len: 20 * ppm, angle: dir, alpha: strength, color: 0xfff0c8, spread: 0.42 });
+      lights.push({ kind: 'glow', ...S(lamp.x, lamp.y), r: 0.8 * ppm, alpha: strength });
+      const mid = this.#camperPoint(c, -0.6, 0.6);
+      lights.push({ kind: 'glow', ...S(mid.x, mid.y), r: 4.2 * ppm, alpha: 0.75 * strength, color: 0xffc27a });   // lantern and windows
+      const tail = this.#camperPoint(c, -3.38, 0.35);
+      lights.push({ kind: 'glow', ...S(tail.x, tail.y), r: 0.9 * ppm, alpha: 0.6 * strength, color: 0xff5a46 });
+      // A rescued fox lends its night vision: a faint glow ahead of the camper.
+      if ((view.animals || []).some(a => a.kind === 'fox' && a.state === 'riding') && night > 0.3) {
+        const ahead = S(c.x + Math.sign(c.vx || 1) * 9, c.y);
+        lights.push({ kind: 'glow', ...ahead, r: 13 * ppm, alpha: 0.32 * night, color: 0xd8f0c8 });
+      }
+      // Fireflies on clear nights.
+      if (night > 0.4 && storm < 0.3) {
+        for (let k = 0; k < 14; k++) {
+          const fx = this.cam.x + ((k * 7.3 + this.time * 0.4 * ((k % 3) - 1)) % 40) - 20;
+          const fy = this.terrain.groundY(fx, this.cam.y + 10) + 0.6 + Math.sin(this.time * 0.9 + k) * 0.5;
+          const blink = Math.max(0, Math.sin(this.time * 2.1 + k * 1.7));
+          lights.push({ kind: 'glow', ...S(fx, fy), r: 0.35 * ppm, alpha: blink * night, color: 0xd6ff8a });
+        }
+      }
+    }
+    this.lighting.update({ w, h, ambient: ambientColor(day, storm, flash), lights, night, storm, time: this.time });
+  }
+
   #render(dt, view, { working }) {
     this.workingNow = working;
     const { width: w, height: h } = this.app.screen;
@@ -735,10 +786,10 @@ export class Game {
     const halfW = w / 2 / ppm, halfH = h / 2 / ppm;
     const ground = this.terrain.surface[Math.max(0, Math.min(this.terrain.nx - 1, Math.round(this.cam.x / 0.25)))];
     this.refY = this.refY === undefined ? ground : this.refY + (ground - this.refY) * k * 0.5;
-    const wet = !!view.latest.wet;
-    this.bg.update(this.cam.x, this.cam.y, ppm, this.refY, this.time);
-    this.fg.update(this.cam.x, w, h, ppm, this.time, wet);
-    this.#weather(dt, w, h, wet);
+    const storm = view.latest.storm || 0, day = daylight(view.latest.tod ?? 0.3);
+    this.bg.update(this.cam.x, this.cam.y, ppm, this.refY, this.time, day);
+    this.fg.update(this.cam.x, w, h, ppm, this.time, storm > 0.3 || day < 0.6);
+    this.#weather(dt, w, h, storm);
     const treeState = new Map((view.latest.trees || []).map(t => [t[0], t]));
     this.forestView.update(this.cam.x - halfW, this.cam.x + halfW, treeState, view.tick, this.time);
     this.terrainView.update(this.cam.x - halfW, this.cam.x + halfW, this.cam.y - halfH, this.cam.y + halfH);
@@ -789,6 +840,7 @@ export class Game {
     this.#sounds(view);
     this.#effects(view);
     this.particles.update(dt, x => this.terrain.groundY(x, this.cam.y + halfH));
-    this.ambience.update(dt, this.time, w, h, this.cam.x, x => this.terrain.groundY(x, this.cam.y + halfH));
+    this.ambience.update(dt, this.time, w, h, this.cam.x, x => this.terrain.groundY(x, this.cam.y + halfH), { day, storm });
+    this.#light(view, w, h, ppm, day, storm);
   }
 }

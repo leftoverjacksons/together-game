@@ -41,6 +41,97 @@ Design pillars:
   - A **branching route graph**: at forks, players choose between segments (e.g. river valley vs. ridgeline). Each run is linear overall.
   - The camper is drawn as a **dollhouse cross-section** when someone is on foot inside. **[Revised 2026-10-10]** Otherwise (everyone outside, or only the driver aboard) the near wall is shown, with windows and a door, and it fades away when someone walks inside.
 - Isometric was considered and rejected; the comparison is in §13.
+- **[REVISED 2026-10-10] Moving to multiple lanes.** After playtesting, a single side-view strip risks getting repetitive: hills, holes and water crossings only go so far. The new direction is in §3b. The two-lane road and forest setup above is its precursor.
+
+---
+
+## 3b. Lanes and biomes **[DECIDED 2026-10-10, prototype built 2026-10-12]**
+
+### The idea
+- **Three parallel lanes** run along the route, seen side-on from a **raised, locked camera angle**: a slightly tilted side view, *not* isometric and *not* rotatable.
+- Each lane is still a side-view strip. Digging, building, the winch and physics work within a lane exactly as now, and hill heights stay readable.
+- **Dividers** run between the lanes: hedgerows, tree lines, creeks, rock bands, fallen logs. They have **gaps**, where the camper can cross into the next lane.
+- Movement becomes **route choice**. You can see well ahead across all three lanes and pick a line, so obstacles become decisions rather than walls. Detouring to reach an animal in another lane is a deliberate trade-off between time and reward.
+
+### Rules
+- **The camper** changes lane only at a gap, or at a crossing the players make themselves:
+  - fell the trees in a hedgerow
+  - fill a ditch
+  - bridge a creek
+  - break a rock band
+- **On foot,** travellers can cross between lanes **anywhere**, slowly through hedges, except at hard barriers (deep water, cliffs).
+- **[2026-10-12] Some dividers are impassable, on purpose:** this turns the route into a puzzle.
+- **[2026-10-12] Water:** shallow water can be driven through (slowly). Deep water needs a bridge.
+  - People wade through shallow water.
+  - Deep water needs stepping stones, a ford, or (later) a bridge or fallen log.
+- **[2026-10-12] Dead ends:** yes, some lanes dead-end.
+- **[2026-10-12] Animals in trouble** sit mostly in the harder lanes. Animals cross lanes more easily than people do, birds most of all.
+- **[2026-10-12] Splitting up:** the two players may be in different lanes. The camera widens to keep both in view, so staying together is a matter of coordination.
+- **Gaps** appear as often as feels good: a first guess is one every 20–40 m per pair of neighbouring lanes. Lanes can also end in dead ends.
+- **Camera:** angle locked. While driving it frames all three lanes; when you're working on foot it eases in closer.
+
+### Biomes and lane character
+- **Biomes** change as you travel along the route, blending over 30–50 m, so it feels like entering and leaving different country.
+- **Lane character** means that within a biome, each lane has its own kind of ground, obstacles and look, so choosing a lane means choosing a kind of problem.
+- **First biome: woods and creek.**
+  - *Front lane, creek bank:* water crossings (shallow fords vs. deep pools), mud, stones, reeds.
+  - *Middle lane, woodland track:* roots, fallen trees, rolling hills, the main route.
+  - *Back lane, wooded hillside:* steeper ground, standing trees to fell, animals in trouble, the best views.
+- Later biomes (meadow, ridgeline, autumn hills, river valley) re-theme the lanes.
+- **[2026-10-12]** The back lane sits a little higher, so it stays visible. Front lanes **fade a little** only when they would actually hide you.
+
+### What stays and what changes
+- **Stays:** the camper physics (each lane is a 2D physics strip), terrain editing, structures, the winch, tools, animals, weather, the server and online play.
+- **Changes:**
+  - everything gets a lane number
+  - the world generator lays out lanes, dividers, gaps and biomes
+  - the camper gains lane changes
+  - the camera and the view are rebuilt for the tilted angle
+- The current forest lane is absorbed into the back lane.
+
+### Plan
+1. ~~Prototype the feel.~~ **Done (2026-10-12)**, see the prototype below. It went straight to three.js, because the engine decision was made first (three.js, §12).
+2. Play-test it. Questions to answer:
+   - Is route choice fun?
+   - Can lanes, heights and gaps be read at a glance?
+   - Which camera angle works best?
+   - Does a fixed-angle 3D view feel cozy?
+3. Build it properly: crossings players make (felling hedges, bridging creeks), the full toolset in lanes, structures, the winch, weather, followers crossing lanes, more biomes, art.
+- **Performance target:** smooth on a mid-range laptop. The three.js view caps resolution at 1.5×, builds terrain meshes only when they change, and draws roughly 100 batches per frame.
+
+### The prototype (2026-10-12)
+- **How to try it:** tick "Try the new three-lane prototype" on the menu, then start a trip or practise. Anyone joining a trip gets whichever mode the trip was started in. The side-view game is unchanged.
+- **Code:**
+  - `shared/lanes/world.mjs`: generator and lane rules
+  - `shared/lanes/laneSim.mjs`: authoritative simulation; same interface as `Sim`, so the server and offline practice run either
+  - `client/lanes/`: the three.js view, loaded only in lane mode
+- **World:**
+  - three lanes, 760 m long, 6.5 m apart
+  - each lane is an ordinary editable `Terrain` with its own height profile and set pieces:
+    - *Creek bank:* pools with water, stones, gullies
+    - *Woodland track:* rolling hills, dips, logs, ravines, ledges
+    - *Wooded hillside:* higher and steeper, with ledges, boulders and ravines
+  - **Dividers:** the creek side has reeds, deep creek and stepping stones. The hill side has hedgerows, rock bands and steep banks.
+  - **Gaps:** open ground, plus fords on the creek side. They are 16–24 m long and come every 22–62 m. At each gap the two lanes are blended to the same height.
+  - **Dead ends:** rock walls in the outer lanes, always 14–26 m past a gap into the middle lane. The middle lane never dead-ends.
+  - **Areas:** creekside woods, open glade, pine hollow. They change along the route, changing tree density and grass colour, and you get an "Entering…" notice.
+- **Physics:** still 2D. Each lane's terrain is its own collision category. The camper collides with its own lane, or with both lanes while crossing a level gap, which takes 1.4 s. Pools and fords drag on it.
+- **Controls:**
+  - At the wheel, **W** / **S** turns into the lane behind / in front when a gap is under the camper. The prompt names the next gap ahead.
+  - On foot, **W** / **S** crosses a divider where it allows; the time depends on what it is (hedge 1.4 s, open ground 0.6 s). You can't climb up more than 1.6 m.
+  - Hold **E** to free an animal; it then rides on the roof. Birds can be freed from the next lane.
+  - The mouse digs and places soil in your own lane.
+  - **[** / **]** change the camera angle, for testing.
+- **View:**
+  - Fixed angle, 36° by default, saved per browser.
+  - The camera always fits the front lane's edge and the hillside behind the back lane, and widens to keep both players in view.
+  - The front lane shows its cut face with soil strata: the diorama look.
+- **Not in the prototype yet:**
+  - other tools (axe, saw, hammer, pickaxe), structures, winch, inventory
+  - weather and night
+  - the dog and followers
+  - crossings players make
+  - final art
 
 ---
 
@@ -192,7 +283,17 @@ Design pillars:
 
 ## 10. Pressure sources
 
-**[DECIDED]** Two pressure sources to start with:
+**[DECIDED]** Two pressure sources to start with. **[Built 2026-10-10, first pass]** (`shared/weather.mjs`, `client/render/lighting.js`):
+- **Day cycle:** 12 minutes in total, made of day, about 1 minute of dusk, about 3 minutes of night, and dawn. Stars and a moon come out on clear nights.
+- **Storms:** they arrive on their own every 5–9 minutes and last 1.5–3 minutes. They build up over about 15 s and fade over about 20 s.
+  - While a storm is heavy (intensity above 0.3): loose soil slides, tyre grip drops by up to 45%, and footing gets slippery.
+  - Lightning and thunder come in the heaviest part.
+- **Lighting:** a half-resolution lightmap is multiplied over the scene. Light sources:
+  - player headlamps (a glow plus a beam in the facing direction)
+  - the camper's headlight beam, its lantern and window glow, and the taillight
+  - fireflies on clear nights
+  - a rescued fox's night vision: a faint glow ahead of the camper
+- **Testing keys:** R forces a storm; N skips to the next dusk or dawn.
 
 - **Storms**
   - Rain lowers traction on soil and wet boards.
@@ -257,6 +358,18 @@ Design pillars:
   3. Night lighting or performance hits a wall in the browser.
 - Reasons to stay: a browser link that works with nothing to install; online play shares one simulation between server and browser; the build-and-test loop is fast and automated.
 - To keep a move cheap: game rules stay engine-independent in `shared/`, and art is data (image files plus a manifest) rather than code.
+- **[2026-10-10] The lane redesign (§3b) brings this checkpoint forward.** A fixed-angle view of lanes at different depths suits a real 3D renderer with a locked camera.
+
+| | three.js (3D in the browser) | Godot |
+|---|---|---|
+| What it is | A rendering library only | A full engine: editor, physics, animation, audio, UI, input |
+| Our code | Keep the game rules in `shared/`, planck.js, the Node server, online play; rewrite the view | Rewrite everything, including online play (GDScript or C#) |
+| Hosting | As now: one Render service, a small download, a link that just works | Still possible: export to the web (20–40 MB first load) served as static files from Render. Browser builds can only network over WebSocket or WebRTC, so we'd keep a small relay server or run a headless Godot server (heavier; probably not the free tier). Desktop builds via itch.io or Steam |
+| Gains | Real depth and lighting; likely lighter than our heavy 2D vector drawing; fast build-and-test loop; Claude can build and test it end to end | Editor for hands-on art, animation and level work; native performance; built-in physics, particles, lights, animation; gamepads; Steam and console paths |
+| Costs | We build our own tooling (no editor) | Full rewrite; heavier web builds; Claude can't use the editor, only text files and headless runs |
+
+- **Leaning:** prototype lanes in the current stack, then three.js for the real version. Choose Godot instead if a desktop or Steam release, or hands-on editor work, becomes a goal.
+- **[DECIDED 2026-10-12] three.js.** Community-built connectors (MCP servers) can drive the Godot editor, which narrowed the tooling gap. They were not enough to justify a full rewrite. Revisit if a desktop or Steam release becomes a goal.
 
 - **Structures (M2):** `shared/structure.mjs`.
   - Boards are static planck bodies.
@@ -268,8 +381,7 @@ Design pillars:
 
 ### Known limitations
 - On-foot travellers do not collide with the camper, and cannot stand on it.
-- The camper's mass changes with roof-rack cargo only, so far. Animals will add more.
-- Rain is a manual toggle (R) until weather exists.
+- The camper's mass changes with roof-rack cargo and with the small animals riding inside; large helpers add none.
 - Unsupported structures get a 6 s grace period ("shaky") so they can be braced. This is a deliberate gameplay concession.
 - Only trees in the forest lane exist so far. Trees standing in the road lane as obstacles are planned.
 
@@ -298,9 +410,10 @@ Design pillars:
 2. **M2 — Timber and building:** handling fix, slumping, forest lane with trees, tool slots, felling, hauling, sawing, roof rack, structural boards, sound effects, visual detail pass. *(First pass done 2026-10-10.)*
 3. **M3 — Winch, items and finds, dropping and handing items, cargo mass.** *(First pass done 2026-10-10.)*
 4. **M4 — Animals: rescue interactions, small animals as the score, large animals as helpers.** *(First pass done 2026-10-10.)* → **Engine checkpoint next** (see §12).
-5. M5 — Stretches, camps, sanctuary, meta-progression.
-6. M6 — Local co-op and gamepad support.
-7. Throughout — art, ambience, audio.
+5. **L — Lanes:** prototype 3 lanes with gaps and lane changes under the tilted camera; then the renderer decision; then the lane and biome generator (woods and creek first), crossings players make, art. Plus a performance pass.
+6. M5 — Stretches, camps, sanctuary, meta-progression.
+7. M6 — Local co-op and gamepad support.
+8. Throughout — art, ambience, audio.
 
 ---
 
@@ -325,4 +438,7 @@ Design pillars:
 | 2026-10-10 | After play: dry soil no longer slides (rain only); inventory panel with camper storage; near wall shown unless someone is on foot inside; tilted campers can be boarded. |
 | 2026-10-10 | Inventory drag and drop. M4 first pass: nine animals with rescue scenes; small animals ride; dog companion; deer/hawk/moose/bear help when the camper struggles. |
 | 2026-10-10 | The dog is a border collie; it boards and leaves the camper with the travellers. |
+| 2026-10-10 | Night and storms first pass: day cycle, automatic storms (slick tyres and footing, slumping, lightning), lightmap with headlamps, headlights, lantern, fireflies and fox night vision. |
+| 2026-10-12 | Lane prototype built, in three.js, as a separate mode beside the side-view game. Answers recorded in §3b: some impassable dividers; shallow water drivable, deep water needs a bridge; dead ends allowed; animals mostly in hard lanes; players may split up and the camera widens. |
+| 2026-10-10 | **Direction change:** three parallel lanes, seen side-on from a locked raised camera, with gaps for the camper and crossing anywhere on foot; biomes along the route (woods and creek first), each lane with its own character. Prototype first; engine checkpoint brought forward (leaning three.js). |
 | 2026-10-10 | Pressure sources: storms (slick ground, slumping earthworks) and night (headlamps and headlights only). |

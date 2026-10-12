@@ -8,6 +8,7 @@ import { mulberry32 } from './rng.mjs';
 import { Terrain } from './terrain.mjs';
 import { newAvatar } from './character.mjs';
 import { Structure } from './structure.mjs';
+import { Weather } from './weather.mjs';
 import { ANIMALS, RESCUE_RANGE, HELP_STAMINA, RIDE_SPOTS, placeAnimals } from './animals.mjs';
 import { forestFloor, floorAt, generateTrees, TREE_HP, logLength, boardsFromLog, LOG_THICKNESS } from './forest.mjs';
 
@@ -53,7 +54,8 @@ export class Sim {
     // End walls so nothing leaves the stretch.
     const walls = this.world.createBody({ type: 'static' });
     for (const x of [0, length]) walls.createFixture(new Edge(Vec2(x, 0), Vec2(x, 200)), { friction: 0.3 });
-    this.wet = false;               // rain: faster, shallower slumping
+    this.weather = new Weather(this.seed);
+    this.wet = false;               // rain: slumping, slick ground (follows the weather)
     this.floor = forestFloor(this.terrain);
     this.trees = generateTrees(this.terrain, this.seed).map(t => ({ ...t, hp: TREE_HP, fallDir: 0, fellTick: 0 }));
     this.logs = new Map();          // id -> { id, lane, len, x, y, a, body, carriers: [{ pid, end }], saw }
@@ -88,6 +90,9 @@ export class Sim {
           const res = this.terrain.fill(x + dx, y + dy, r, 255, 10, null);
           for (let k = 0; k < res.indices.length; k++) this.edits.set(res.indices[k], res.values[k]);
         }
+        // The burrow mound is settled ground: rain should not wash the rabbit free.
+        this.terrain.loose.fill(0);
+        this.terrain.active.clear();
       }
       if (def.rescue === 'saw') a.pin = this.#addLog(0, 2.4, x + 0.2, y + 0.3).id;
       this.animals.push(a);
@@ -424,12 +429,8 @@ export class Sim {
       case 'build': this.#build(p, msg); break;
       case 'unbuild': this.#unbuild(p, msg); break;
       case 'salvage': this.#salvage(p, msg.id); break;
-      case 'weather': {   // temporary toggle until weather exists
-        const wet = msg.wet === true;
-        if (wet && !this.wet) this.terrain.reactivateLoose();
-        this.wet = wet;
-        break;
-      }
+      case 'weather': this.weather.setForced(msg.wet === true); break;   // testing: force a storm (R)
+      case 'skipTime': this.weather.skipPhase(); break;                     // testing: next dusk or dawn (N)
       case 'dig':
       case 'fill': this.#tool(p, msg); break;
     }
@@ -931,6 +932,21 @@ export class Sim {
     w.tension = f / WINCH.force;
   }
 
+  // Weather: rain wakes loose soil and makes the tyres slip.
+  #stepWeather(dt) {
+    const W = this.weather;
+    W.step(dt, this.tick);
+    const wet = W.wet;
+    if (wet && !this.wet) this.terrain.reactivateLoose();
+    this.wet = wet;
+    const grip = 1.25 * (1 - 0.45 * W.storm);
+    for (const wheel of this.camper.wheels) {
+      wheel.getFixtureList().setFriction(grip);
+      // Existing contacts keep their mixed friction until told otherwise.
+      for (let ce = wheel.getContactList(); ce; ce = ce.next) ce.contact.setFriction(Math.sqrt(ce.contact.getFixtureA().getFriction() * ce.contact.getFixtureB().getFriction()));
+    }
+  }
+
   step(dt) {
     this.tick++;
     const c = this.camper;
@@ -967,6 +983,7 @@ export class Sim {
       ch.applyForceToCenter(Vec2(0, -GRAVITY * this.camperMass() * (upright < -0.3 ? 1.0 : upright < 0.3 ? 0.75 : 0.4)), true);
     }
 
+    this.#stepWeather(dt);
     this.#stepLogs(dt);
     this.#stepWinch(dt);
     this.#stepAnimals(dt);
@@ -997,6 +1014,7 @@ export class Sim {
       t: 'snap', tick: this.tick,
       c: { x: round(p.x), y: round(p.y), a: round(ch.getAngle()), vx: round(v.x), vy: round(v.y), w, th: c.throttle, mass: Math.round(this.camperMass()) },
       tipped: this.tipped, driver: d ? d.id : null, wet: this.wet,
+      tod: Math.round(this.weather.tod * 10000) / 10000, storm: round(this.weather.storm), lightning: this.weather.lightning,
       players: [...this.players.values()].map(q => ({
         id: q.id, name: q.name, seat: q.seat, soil: round(q.soil), pushing: q.pushing, connected: q.connected,
         tool: q.tool, tools: q.tools, boards: q.boards, carrying: q.carrying,

@@ -111,3 +111,12 @@ test('the collie hops into the camper when everyone is aboard, and out again', (
   run(sim, 0.5);
   assert.equal(dog.state, 'companion', 'hopped out');
 });
+
+test('a storm does not wash the rabbit out of its burrow', () => {
+  const sim = new Sim(1234);
+  const rabbit = find(sim, 'rabbit');
+  sim.weather.setForced(true); sim.weather.storm = 1;
+  run(sim, 20);
+  assert.equal(rabbit.state, 'waiting');
+  assert.ok(sim.terrain.solidAt(rabbit.x, rabbit.y + 0.4));
+});

@@ -6,12 +6,14 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { WebSocketServer } from 'ws';
 import { Sim } from '../shared/sim.mjs';
+import { LaneSim } from '../shared/lanes/laneSim.mjs';
 import { TICK_HZ, SNAPSHOT_HZ, MAX_PLAYERS } from '../shared/constants.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.map': 'application/json', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.ico': 'image/x-icon' };
 const ASSET_FILE = /^\/assets\/[\w-]+(\/[\w-]+)*\.(png|webp|jpg|svg|json)$/;
-const STATIC = { '/': 'public/index.html', '/style.css': 'public/style.css', '/game.js': 'dist/game.js', '/game.js.map': 'dist/game.js.map' };
+const STATIC = { '/': 'public/index.html', '/style.css': 'public/style.css' };
+const DIST_FILE = /^\/[\w-]+\.js(\.map)?$/;   // the bundle and its lazily loaded chunks
 const MAX_ROOMS = 100;
 const ROOM_IDLE_MS = 2 * 60 * 60 * 1000;
 const DT = 1 / TICK_HZ;
@@ -33,6 +35,12 @@ export function createGameServer() {
     return ++b.count > 30;
   }
 
+  async function readBody(req) {
+    let body = '';
+    for await (const chunk of req) { body += chunk; if (body.length > 1024) return {}; }
+    try { const v = JSON.parse(body || '{}'); return v && typeof v === 'object' ? v : {}; } catch { return {}; }
+  }
+
   function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(data));
@@ -50,15 +58,16 @@ export function createGameServer() {
         if (rooms.size >= MAX_ROOMS) return json(res, 503, { error: 'The campground is full. Try again later.' });
         let code; do code = newCode(); while (rooms.has(code));
         const seed = randomBytes(4).readUInt32LE(0);
-        rooms.set(code, { sim: new Sim(seed), sessions: [], touched: Date.now(), acc: 0 });
-        return json(res, 200, { code });
+        const mode = (await readBody(req)).mode === 'lanes' ? 'lanes' : 'side';
+        rooms.set(code, { sim: mode === 'lanes' ? new LaneSim(seed) : new Sim(seed), mode, sessions: [], touched: Date.now(), acc: 0 });
+        return json(res, 200, { code, mode });
       }
       if (req.method === 'GET' && url.pathname.startsWith('/api/rooms/')) {
         const room = rooms.get(url.pathname.slice(11).toUpperCase());
-        return room ? json(res, 200, { players: room.sessions.length }) : json(res, 404, { error: 'No trip with that code.' });
+        return room ? json(res, 200, { players: room.sessions.length, mode: room.mode }) : json(res, 404, { error: 'No trip with that code.' });
       }
       if (req.method === 'GET' || req.method === 'HEAD') {
-        const file = STATIC[url.pathname] || (ASSET_FILE.test(url.pathname) && !url.pathname.includes('..') ? 'public' + url.pathname : null);
+        const file = STATIC[url.pathname] || (DIST_FILE.test(url.pathname) ? 'dist' + url.pathname : null) || (ASSET_FILE.test(url.pathname) && !url.pathname.includes('..') ? 'public' + url.pathname : null);
         if (file) {
           const path = normalize(join(ROOT, file));
           let entry = fileCache.get(path);

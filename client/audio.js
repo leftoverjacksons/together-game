@@ -214,17 +214,39 @@ export class Audio {
     this.nextBird = ctx.currentTime + 1.5;
   }
 
-  setRain(on) {
+  setRain(amount) {
     if (!this.ctx) return;
-    this.rainGain.gain.setTargetAtTime(on ? 0.09 : 0, this.ctx.currentTime, 0.8);
+    this.rainGain.gain.setTargetAtTime(0.13 * Math.max(0, Math.min(1, +amount)), this.ctx.currentTime, 0.8);
   }
 
-  // Called every frame: schedules birdsong.
-  tick(wet) {
+  thunder(delay = 1) {
+    if (!this.ctx) return;
+    const o = this.#out(undefined, 0.9);
+    this.#noise(o, { type: 'lowpass', freq: 900, dur: 0.25, vol: 0.9, delay, sweep: 300 });
+    this.#noise(o, { type: 'lowpass', freq: 220, dur: 3.2, attack: 0.3, vol: 1, delay: delay + 0.1, sweep: 60 });
+    this.#tone(o, { freq: 48, to: 32, dur: 2.5, attack: 0.25, vol: 0.6, delay: delay + 0.1 });
+  }
+
+  // Called every frame: birdsong by day, crickets and the odd owl at night.
+  tick({ day = 1, storm = 0 } = {}) {
     if (!this.ctx) return;
     const ctx = this.ctx;
     if (ctx.currentTime < this.nextBird) return;
+    const wet = storm > 0.3;
+    if (day < 0.4) {
+      this.nextBird = ctx.currentTime + (wet ? 4 : 0.6) + Math.random() * 1.2;
+      if (wet) return;
+      if (Math.random() < 0.06) {   // owl
+        const o = this.#out(this.listenerX + (Math.random() - 0.5) * 40, 0.35);
+        for (const d of [0, 0.45, 0.62]) this.#tone(o, { freq: 420, to: 360, dur: 0.35, attack: 0.08, vol: 0.5, delay: d });
+        return;
+      }
+      const o = this.#out(this.listenerX + (Math.random() - 0.5) * 30, 0.12);
+      for (let k = 0; k < 3; k++) this.#tone(o, { type: 'square', freq: 4300 + Math.random() * 300, dur: 0.035, vol: 0.25, delay: k * 0.06 });
+      return;
+    }
     this.nextBird = ctx.currentTime + (wet ? 6 : 1.5) + Math.random() * (wet ? 10 : 5);
+    if (wet && Math.random() < 0.7) return;
     const o = this.#out(this.listenerX + (Math.random() - 0.5) * 50, 0.25 + Math.random() * 0.15);
     const kind = Math.floor(Math.random() * 3);
     const base = 2200 + Math.random() * 1800;

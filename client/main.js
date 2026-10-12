@@ -59,11 +59,23 @@ const hud = {
 };
 const escape = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// The lane prototype is a separate mode with its own (lazily loaded) renderer.
+const lanesWanted = () => $('mode-lanes').checked;
+$('mode-lanes').checked = params.get('mode') === 'lanes' || store.get('together:mode') === 'lanes';
+$('mode-lanes').onchange = () => store.set('together:mode', lanesWanted() ? 'lanes' : 'side');
+
 let game = null;
-function launch(session) {
+async function launch(session, mode = 'side') {
   audio.start();
-  if (game) { game.session.close(); game.session = session; session.onmessage = m => game.onMessage(m); session.onstatus = (s, d) => hud.status(s, d); session.connect(); return; }
-  game = new Game(session, hud, audio);
+  if (game) {
+    if (game.mode !== mode) { location.href = location.pathname + (session.code ? '?trip=' + session.code : ''); return; }
+    game.session.close(); game.session = session; session.onmessage = m => game.onMessage(m); session.onstatus = (s, d) => hud.status(s, d); session.connect(); return;
+  }
+  if (mode === 'lanes') {
+    const { LaneGame } = await import('./lanes/laneGame.js');
+    game = new LaneGame(session, hud, audio);
+  } else game = new Game(session, hud, audio);
+  game.mode = mode;
   window.__together = game;   // debugging handle
   game.start($('stage'));
 }
@@ -72,20 +84,28 @@ $('create').onclick = async () => {
   audio.start();
   fail('');
   try {
-    const r = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const r = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: lanesWanted() ? 'lanes' : 'side' }) });
     const data = await r.json();
     if (!r.ok) return fail(data.error || 'Could not start a trip.');
-    launch(new OnlineSession(data.code, name()));
+    launch(new OnlineSession(data.code, name()), data.mode);
   } catch { fail('Could not reach the server.'); }
 };
-$('join').onclick = () => {
+$('join').onclick = async () => {
   audio.start();
   fail('');
   const code = $('code').value.trim().toUpperCase();
   if (!/^[0-9A-F]{6}$/.test(code)) return fail('Trip codes are six letters and numbers.');
-  launch(new OnlineSession(code, name()));
+  // The trip decides the mode, whatever this menu says.
+  let mode = 'side';
+  try {
+    const r = await fetch('/api/rooms/' + code);
+    const data = await r.json();
+    if (!r.ok) return fail(data.error || 'No trip with that code.');
+    mode = data.mode || 'side';
+  } catch { return fail('Could not reach the server.'); }
+  launch(new OnlineSession(code, name()), mode);
 };
-$('practice').onclick = () => { audio.start(); fail(''); launch(new LocalSession(name())); };
+$('practice').onclick = () => { audio.start(); fail(''); const mode = lanesWanted() ? 'lanes' : 'side'; launch(new LocalSession(name(), mode), mode); };
 $('copy').onclick = async () => {
   const link = location.origin + '/?trip=' + $('trip-code').textContent;
   try { await navigator.clipboard.writeText(link); $('copy').textContent = 'Copied'; } catch { prompt('Invite link', link); }
