@@ -3,7 +3,12 @@
 Living document. Update it whenever a decision is made or reversed.
 Status markers: **[DECIDED]**, **[LEANING]** (provisional, not yet confirmed), **[OPEN]** (needs discussion).
 
-Last updated: 2026-10-10
+Last updated: 2026-10-12
+
+> **Start here (2026-10-12).**
+> - The three-lane prototype was played and **set aside**; we are back to the side view (§3b).
+> - The new direction for keeping the side view fresh: **route forks** with one player scouting on foot (§3c).
+> - Art is being re-tested as **pixel art generated with SpriteCook**. The brief for that session is `docs/ART.md` §7.
 
 ---
 
@@ -42,10 +47,28 @@ Design pillars:
   - The camper is drawn as a **dollhouse cross-section** when someone is on foot inside. **[Revised 2026-10-10]** Otherwise (everyone outside, or only the driver aboard) the near wall is shown, with windows and a door, and it fades away when someone walks inside.
 - Isometric was considered and rejected; the comparison is in §13.
 - **[REVISED 2026-10-10] Moving to multiple lanes.** After playtesting, a single side-view strip risks getting repetitive: hills, holes and water crossings only go so far. The new direction is in §3b. The two-lane road and forest setup above is its precursor.
+- **[REVERSED 2026-10-12] Back to the side view.** The lane prototype (§3b) didn't work. The side view stays the game, and freshness comes from route forks, places only travellers on foot can reach, and variety (§3c).
 
 ---
 
-## 3b. Lanes and biomes **[DECIDED 2026-10-10, prototype built 2026-10-12]**
+## 3b. Lanes and biomes **[REJECTED 2026-10-12 after play-testing; kept for the record]**
+
+### Why the lanes didn't work (2026-10-12)
+- **It felt locked in, like a lane-selection game.** The 3D view promises freedom in depth, but movement in depth was an on/off switch available only at fixed gaps. The picture says "space"; the rules say "menu of three". That mismatch is the core problem, and no art style fixes it.
+- **It weakened what was working.** The cut-away side view makes digging, building and the camper dollhouse readable. With lanes, that view only properly existed in the front lane.
+- **The look was less charming.** The flat-shaded low-poly look lost the warmth of the painted side view.
+- **What the side-view build does well**, and what is worth keeping:
+  - reshaping the ground to get a heavy vehicle through
+  - the camper as a cross-section dollhouse
+  - two people splitting jobs
+  - animals as small puzzles
+  - a warm, hand-made feel
+- **Lesson for next time:** pin down the actual complaint ("2D will get old": the same obstacles? no choices? the same scenery?) before prototyping a structural change, and sketch cheaply first.
+- **The prototype code** (`shared/lanes/`, `client/lanes/`, the menu checkbox) is still in the repo and still works. Remove it once the new direction is settled. The useful pieces may be reused: gap levelling, foot-crossing rules, and per-lane collision categories.
+
+---
+
+*Original lane notes follow.*
 
 ### The idea
 - **Three parallel lanes** run along the route, seen side-on from a **raised, locked camera angle**: a slightly tilted side view, *not* isometric and *not* rotatable.
@@ -132,6 +155,40 @@ Design pillars:
   - the dog and followers
   - crossings players make
   - final art
+
+---
+
+## 3c. Route forks and scouting **[DECIDED 2026-10-12, not built yet]**
+
+Variety within the side view, using height rather than depth: a side view shows height for free, so a choice between routes is visible on screen and easy to judge.
+
+### Forks for the camper
+- Every few hundred metres the strip **splits vertically**, and the two routes rejoin later:
+  - **High route:** a ridge, a ledge road, or log bridges up through the canopy.
+  - **Low route:** a cave, an old mine tunnel, or a dry riverbed underneath.
+- **The two routes should differ in kind, not just position**, so the choice is "which kind of trouble?":
+  - **High route, building:** bridging gaps with boards, using the winch on anchor trees, wind and exposure, fine views, birds of prey.
+  - **Low route, digging:** unsupported soil falling in, water pooling in rain, darkness (headlights and headlamps), burrowing animals.
+- **Constraints:**
+  - The camper is about 6.6 m long and heavy, so high routes need solid ground, or structures the players build and the truss system must hold.
+  - The camera must widen at forks to show both routes. Forks are occasional set pieces.
+- The players can also **make their own low route** by digging through a hill; the terrain system already half-supports this.
+
+### Scouting **[DECIDED]**
+- At a fork, **one player scouts a route on foot while the other waits with the camper.**
+  - **The scout:** goes ahead, judges the route (is the tunnel flooded? does the ledge hold?), and may prepare it (dig, place a board, clear a rock).
+  - **Reporting back:** out loud, plus a simple in-game signal, such as a marker flag dropped at the route's end that says "good" or "blocked".
+  - **The player at the camper** needs something useful to do: prepare the other route's entrance, sort the roof rack, tend animals.
+- **[OPEN] Camera.** §2 says one shared camera in both modes. Scouting means splitting up. Online, each player could simply have their own camera following them; local co-op would need a shared camera with a maximum spread, or split-screen. Decide when forks are built.
+
+### Places only travellers on foot can reach
+- Burrows, ledges, tree canopy, small caves: the camper can't go there, people can. Animals, tools and shortcuts hide there. They give a reason to leave the camper without changing its route.
+
+### Bigger route choice: a map between stretches
+- A map of camps with forks between stretches (for example a ridge route vs. a river valley, each with its own hazards and animals). This is the slower, strategic choice, and it costs nothing in readability. See §4 and the branching route graph in §3.
+
+### Variety
+- **Biomes and events change the problems, not just the scenery:** mud, ice, river crossings, rockfalls, night, storms.
 
 ---
 
@@ -307,7 +364,11 @@ Design pillars:
 
 ## 11. Art direction
 
-- **[DECIDED]** Soft, well-lit, painted vector. Not pixel art: it flickered in past attempts, and it scales poorly to arbitrary zoom levels.
+- **[OPEN 2026-10-12] Pixel art is being re-tested** against the painted vector look, using SpriteCook to generate assets. The brief for that session is `docs/ART.md` §7.
+  - The earlier flicker almost certainly came from sub-pixel camera movement and non-integer scaling. The fix is to render the world into a low-resolution target, snap the camera to whole pixels, and scale up by a whole number with nearest-neighbour filtering. That also keeps the rotating camper and the marching-squares terrain on one consistent pixel grid (compare *Noita*), and is likely lighter on laptops.
+  - Cozy pixel references: *Stardew Valley*, *Eastward*. Pixel art with fully destructible terrain: *Noita*, *Terraria*.
+  - Decide by comparing the same scene in both styles side by side.
+- **[DECIDED 2026-10-10, under review]** Soft, well-lit, painted vector. Not pixel art: it flickered in past attempts, and it scales poorly to arbitrary zoom levels.
   - Background layers: gradient silhouettes with atmospheric perspective (layers grow lighter and hazier with distance), in the style of *Alto*.
   - Foreground: rounded vector shapes with soft rim lighting and contact shadows.
   - Lighting: a global colour grade driven by time of day. Golden hour by default. At night, cool blue, contrasted with the camper's warm lantern light.
@@ -370,6 +431,7 @@ Design pillars:
 
 - **Leaning:** prototype lanes in the current stack, then three.js for the real version. Choose Godot instead if a desktop or Steam release, or hands-on editor work, becomes a goal.
 - **[DECIDED 2026-10-12] three.js.** Community-built connectors (MCP servers) can drive the Godot editor, which narrowed the tooling gap. They were not enough to justify a full rewrite. Revisit if a desktop or Steam release becomes a goal.
+- **[SUPERSEDED 2026-10-12]** With the lanes rejected, the side view continues on **PixiJS**. three.js was only needed for the lane view. The engine question returns only if a desktop or Steam release becomes a goal.
 
 - **Structures (M2):** `shared/structure.mjs`.
   - Boards are static planck bodies.
@@ -410,7 +472,9 @@ Design pillars:
 2. **M2 — Timber and building:** handling fix, slumping, forest lane with trees, tool slots, felling, hauling, sawing, roof rack, structural boards, sound effects, visual detail pass. *(First pass done 2026-10-10.)*
 3. **M3 — Winch, items and finds, dropping and handing items, cargo mass.** *(First pass done 2026-10-10.)*
 4. **M4 — Animals: rescue interactions, small animals as the score, large animals as helpers.** *(First pass done 2026-10-10.)* → **Engine checkpoint next** (see §12).
-5. **L — Lanes:** prototype 3 lanes with gaps and lane changes under the tilted camera; then the renderer decision; then the lane and biome generator (woods and creek first), crossings players make, art. Plus a performance pass.
+5. ~~**L — Lanes.**~~ Prototyped and rejected 2026-10-12 (§3b).
+5a. **A — Art test (next):** pixel art via SpriteCook vs. the painted look, in the same scene (`docs/ART.md` §7). Plus a low-resolution rendering pipeline, which may also be the performance fix.
+5b. **F — Forks and scouting:** vertical route forks (high = build, low = dig), scouting, marker flags, places only travellers on foot can reach (§3c).
 6. M5 — Stretches, camps, sanctuary, meta-progression.
 7. M6 — Local co-op and gamepad support.
 8. Throughout — art, ambience, audio.
@@ -439,6 +503,8 @@ Design pillars:
 | 2026-10-10 | Inventory drag and drop. M4 first pass: nine animals with rescue scenes; small animals ride; dog companion; deer/hawk/moose/bear help when the camper struggles. |
 | 2026-10-10 | The dog is a border collie; it boards and leaves the camper with the travellers. |
 | 2026-10-10 | Night and storms first pass: day cycle, automatic storms (slick tyres and footing, slumping, lightning), lightmap with headlamps, headlights, lantern, fireflies and fox night vision. |
+| 2026-10-12 | **Lanes rejected after play-testing**: they felt locked in and less charming, and weakened the cross-section view. Back to the side view. Freshness comes from vertical route forks (high = build, low = dig) with one player scouting on foot while the other waits with the camper, places only travellers on foot can reach, a map between stretches, and biomes and events (§3c). |
+| 2026-10-12 | Art re-opened: test pixel art generated with SpriteCook (through its Claude Code plugin, in a local session) against the painted look. Brief in `docs/ART.md` §7. |
 | 2026-10-12 | Lane prototype built, in three.js, as a separate mode beside the side-view game. Answers recorded in §3b: some impassable dividers; shallow water drivable, deep water needs a bridge; dead ends allowed; animals mostly in hard lanes; players may split up and the camera widens. |
 | 2026-10-10 | **Direction change:** three parallel lanes, seen side-on from a locked raised camera, with gaps for the camper and crossing anywhere on foot; biomes along the route (woods and creek first), each lane with its own character. Prototype first; engine checkpoint brought forward (leaning three.js). |
 | 2026-10-10 | Pressure sources: storms (slick ground, slumping earthworks) and night (headlamps and headlights only). |
