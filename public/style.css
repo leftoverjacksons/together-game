@@ -73,3 +73,7 @@ button.quiet { border-color: transparent; background: transparent; text-decorati
 #inventory .ground { margin-top: 10px; padding: 10px; border: 2px dashed #d8c6a8; border-radius: 12px; text-align: center; font-size: 12px; opacity: 0.75; }
 #rescued { font-size: 13px; font-weight: 700; color: #3f8f88; }
 #helping { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); padding: 8px 16px; border-radius: 999px; background: rgba(63, 143, 136, 0.9); color: #fff; font-weight: 700; }
+label.check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+label.check input { width: 16px; height: 16px; }
+.lanes-mode #toolbar, .lanes-mode #boards, .lanes-mode #rack, .lanes-mode #mass, .lanes-mode #helping { display: none !important; }
+.lanes-mode #help { max-width: min(520px, calc(100vw - 24px)); }

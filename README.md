@@ -7,6 +7,13 @@ Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md):
 
 ## Status: milestone 4 (animals) plus night and storms
 
+**New: three-lane prototype.** Tick *Try the new three-lane prototype* on the menu. It shows three parallel lanes under a fixed raised camera, drawn with three.js:
+- The camper turns between lanes at gaps.
+- On foot you can cross most dividers, but not deep creek or steep banks.
+- The outer lanes have dead ends and most of the animals.
+
+See `docs/DESIGN.md` §3b. Code: `shared/lanes/`, `client/lanes/`.
+
 - **Terrain:**
   - A procedural stretch with set pieces: ravines, hills, ledges, rock boulders, dips.
   - Editable terrain: dig soil into your bucket and place it to build ramps or fill gaps. Rock cannot be dug.
@@ -46,7 +53,7 @@ Not yet: camps and the sanctuary, local co-op on one machine. See the milestones
 
 ```sh
 npm install
-npm run build     # bundles client/ into dist/game.js
+npm run build     # bundles client/ into dist/ (game.js plus lazily loaded chunks)
 npm start         # http://localhost:3000
 ```
 
@@ -96,8 +103,9 @@ shared/     simulation shared by server and browser
   structure.mjs   boards, joints, frame analysis, breaking
   forest.mjs      forest-lane floor, trees, logs
   character.mjs   on-foot movement (road and forest lanes)
+  lanes/          three-lane prototype: world generator and rules (world.mjs), simulation (laneSim.mjs)
 server/     HTTP + WebSocket server, rooms, fixed-rate loop
-client/     browser game: sessions (online/offline), input, PixiJS renderer
+client/     browser game: sessions (online/offline), input, PixiJS renderer; lanes/ is the three.js lane prototype
 public/     index.html, styles, assets/ (art slots: manifest.json + images)
 test/       node --test suites
 docs/       design document

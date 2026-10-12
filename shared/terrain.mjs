@@ -14,7 +14,10 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
 export class Terrain {
-  constructor(length, seed) {
+  // profile(terrain) -> { h, rockBump, soilDepth } replaces the built-in
+  // generator (the lane prototype supplies its own height profiles).
+  constructor(length, seed, profile = null) {
+    this.profile = profile;
     this.seed = seed >>> 0;
     this.length = length;
     this.nx = Math.round(length / CELL) + 1;
@@ -37,6 +40,11 @@ export class Terrain {
 
   generate() {
     const { nx, ny, seed } = this;
+    if (this.profile) {
+      const { h, rockBump, soilDepth } = this.profile(this);
+      this.#fill(h, rockBump, soilDepth);
+      return;
+    }
     const rand = mulberry32(seed);
     const h = new Float32Array(nx);
     const soilDepth = new Float32Array(nx);
@@ -101,7 +109,11 @@ export class Terrain {
       h[ix] = h[ix] * (1 - a) + startH * a;
       h[ix] = h[ix] * (1 - b) + endH * b;
     }
+    this.#fill(h, rockBump, soilDepth);
+  }
 
+  #fill(h, rockBump, soilDepth) {
+    const { nx, ny } = this;
     for (let ix = 0; ix < nx; ix++) {
       const top = h[ix] + rockBump[ix];
       this.surface[ix] = top;
