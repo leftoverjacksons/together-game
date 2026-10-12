@@ -7,12 +7,10 @@ Art slots, the style brief and the art test are in [`docs/ART.md`](docs/ART.md):
 
 ## Status: milestone 4 (animals) plus night and storms
 
-**New: three-lane prototype.** Tick *Try the new three-lane prototype* on the menu. It shows three parallel lanes under a fixed raised camera, drawn with three.js:
-- The camper turns between lanes at gaps.
-- On foot you can cross most dividers, but not deep creek or steep banks.
-- The outer lanes have dead ends and most of the animals.
+**New: route forks.** About 2–3 minutes in, the road runs over a hidden cave. Either drive on over the top and deal with a crevasse there, or dig through the turf and take the dark cave route. The cave route has a cave-in to dig through, a fox den you can only reach on foot, and a crust to dig out through at the far end. Scout ahead and plant flags: **T** for good, **X** for blocked. See `docs/DESIGN.md` §3c.
 
-See `docs/DESIGN.md` §3b. Code: `shared/lanes/`, `client/lanes/`.
+**Test switch:** *Pixel art (test)* on the menu renders the game as pixel art (`docs/ART.md` §7). It's off by default.
+
 
 - **Terrain:**
   - A procedural stretch with set pieces: ravines, hills, ledges, rock boulders, dips.
@@ -103,9 +101,9 @@ shared/     simulation shared by server and browser
   structure.mjs   boards, joints, frame analysis, breaking
   forest.mjs      forest-lane floor, trees, logs
   character.mjs   on-foot movement (road and forest lanes)
-  lanes/          three-lane prototype: world generator and rules (world.mjs), simulation (laneSim.mjs)
+  fork.mjs        route forks: the cave under the road, carving, zones
 server/     HTTP + WebSocket server, rooms, fixed-rate loop
-client/     browser game: sessions (online/offline), input, PixiJS renderer; lanes/ is the three.js lane prototype
+client/     browser game: sessions (online/offline), input, PixiJS renderer; pixel/ is the pixel-art test
 public/     index.html, styles, assets/ (art slots: manifest.json + images)
 test/       node --test suites
 docs/       design document

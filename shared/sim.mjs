@@ -9,6 +9,7 @@ import { Terrain } from './terrain.mjs';
 import { newAvatar } from './character.mjs';
 import { Structure } from './structure.mjs';
 import { Weather } from './weather.mjs';
+import { FORK, forkZone } from './fork.mjs';
 import { ANIMALS, RESCUE_RANGE, HELP_STAMINA, RIDE_SPOTS, placeAnimals } from './animals.mjs';
 import { forestFloor, floorAt, generateTrees, TREE_HP, logLength, boardsFromLog, LOG_THICKNESS } from './forest.mjs';
 
@@ -68,8 +69,10 @@ export class Sim {
     this.structure = new Structure(this.world, this.terrain);
     this.slumpBlocked = (ax, ay, bx, by) => this.structure.boards.size > 0 && this.structure.blocksSegment(ax, ay, bx, by);
     this.#createCamper(22);
+    this.flags = new Map();         // id -> { id, owner, kind: 'good'|'blocked', x, y }
     this.#placeFinds();
     this.#placeAnimals();
+    this.#furnishForks();
   }
 
   // ----- Animals -----
@@ -81,7 +84,7 @@ export class Sim {
     for (const spec of placeAnimals(this.terrain.length, this.seed)) {
       const def = ANIMALS[spec.kind];
       const lane = def.lane;
-      const x = spec.x;
+      const x = lane === 0 ? this.#clearOfForks(spec.x) : spec.x;
       const y = lane === 1 ? floorAt(this.floor, x) : this.terrain.groundY(x);
       const a = { id: this.nextId++, kind: spec.kind, state: 'waiting', lane, x, y, progress: 0, facing: 1, stamina: 1, bark: 0, spot: -1, carrier: null, pin: null };
       if (def.rescue === 'dig') {
@@ -97,6 +100,35 @@ export class Sim {
       if (def.rescue === 'saw') a.pin = this.#addLog(0, 2.4, x + 0.2, y + 0.3).id;
       this.animals.push(a);
     }
+  }
+
+  // Route forks: nothing else spawns inside one; the cave holds a fox den
+  // (reachable only on foot) and a spare jack on its floor.
+  #clearOfForks(x) {
+    for (const f of this.terrain.forks) if (x > f.x0 - 8 && x < f.x0 + FORK.length + 8) return f.x0 + FORK.length + 12;
+    return x;
+  }
+
+  #furnishForks() {
+    for (const f of this.terrain.forks) {
+      const dx = (FORK.den[0] + FORK.den[1]) / 2;
+      this.animals.push({ id: this.nextId++, kind: 'fox', state: 'waiting', lane: 0, x: f.x0 + dx, y: f.h0 - FORK.den[2], progress: 0, facing: -1, stamina: 1, bark: 0, spot: -1, carrier: null, pin: null, den: true });
+      const jack = { id: this.nextId++, kind: 'jack', lane: 0, x: f.x0 + 37, y: f.h0 - FORK.floor };
+      this.items.set(jack.id, jack);
+    }
+  }
+
+  // Scouting: plant a flag where you stand ('good' or 'blocked'), or pull up your own nearby flag.
+  #flag(p, kind) {
+    const a = p.avatar;
+    if (a.mode !== 'out' || (a.lane || 0) !== 0) return;
+    const own = [...this.flags.values()].find(f => f.owner === p.id && Math.hypot(f.x - a.x, f.y - a.y) < 1.5);
+    if (own) { this.flags.delete(own.id); return; }
+    const mine = [...this.flags.values()].filter(f => f.owner === p.id);
+    if (mine.length >= 4) this.flags.delete(mine[0].id);
+    const f = { id: this.nextId++, owner: p.id, kind: kind === 'blocked' ? 'blocked' : 'good', x: a.x, y: a.y };
+    this.flags.set(f.id, f);
+    this.outbox.push({ t: 'fx', kind: 'flag', by: p.id, name: p.name, flag: f.kind, zone: forkZone(this.terrain.forks, f.x, f.y) });
   }
 
   #animalGround(a) {
@@ -177,7 +209,7 @@ export class Sim {
       const def = ANIMALS[a.kind];
       if (a.state === 'waiting') {
         if (def.rescue === 'free') {
-          const workers = outside.filter(q => q.rescuing && (q.avatar.lane || 0) === a.lane && Math.abs(q.avatar.x - a.x) < RESCUE_RANGE).length;
+          const workers = outside.filter(q => q.rescuing && (q.avatar.lane || 0) === a.lane && Math.abs(q.avatar.x - a.x) < RESCUE_RANGE && Math.abs(q.avatar.y - a.y) < 2.2).length;
           if (workers) a.progress = Math.min(1, a.progress + (dt / def.work) * workers);
           else a.progress = Math.max(0, a.progress - dt * 0.05);
           if (a.progress >= 1) this.#rescue(a);
@@ -243,13 +275,15 @@ export class Sim {
     for (const kind of kinds) {
       if (x > this.terrain.length - 40) break;
       const lane = rand() < 0.7 ? 1 : 0;
-      this.#addItem(kind, lane, x);
+      this.#addItem(kind, lane, lane === 0 ? this.#clearOfForks(x) : x);
       x += 70 + rand() * 60;
     }
   }
 
-  #addItem(kind, lane, x) {
-    const y = lane === 1 ? floorAt(this.floor, x) : this.terrain.groundY(x, 47);
+  // fromY: drop from this height (a traveller's feet) rather than from the sky,
+  // so a tool dropped in a cave stays in the cave.
+  #addItem(kind, lane, x, fromY = null) {
+    const y = lane === 1 ? floorAt(this.floor, x) : this.terrain.groundY(x, fromY === null ? 47 : fromY + 1);
     const item = { id: this.nextId++, kind, lane, x, y };
     this.items.set(item.id, item);
     return item;
@@ -431,6 +465,7 @@ export class Sim {
       case 'salvage': this.#salvage(p, msg.id); break;
       case 'weather': this.weather.setForced(msg.wet === true); break;   // testing: force a storm (R)
       case 'skipTime': this.weather.skipPhase(); break;                     // testing: next dusk or dawn (N)
+      case 'flag': this.#flag(p, msg.kind); break;
       case 'dig':
       case 'fill': this.#tool(p, msg); break;
     }
@@ -765,14 +800,14 @@ export class Sim {
 
   #nearItem(p, id) {
     const it = this.items.get(id);
-    return it && p.avatar.mode === 'out' && (p.avatar.lane || 0) === it.lane && Math.abs(it.x - p.avatar.x) < ITEM_RANGE + 0.3 ? it : null;
+    return it && p.avatar.mode === 'out' && (p.avatar.lane || 0) === it.lane && Math.abs(it.x - p.avatar.x) < ITEM_RANGE + 0.3 && Math.abs(it.y - p.avatar.y) < 2.2 ? it : null;
   }
 
   #pickup(p, id) {
     const it = this.#nearItem(p, id);
     if (!it) return;
     let slot = p.tools.indexOf(null);
-    if (slot < 0) { slot = p.tool; this.#addItem(p.tools[slot], it.lane, p.avatar.x); }   // full: swap with the tool in hand
+    if (slot < 0) { slot = p.tool; this.#addItem(p.tools[slot], it.lane, p.avatar.x, p.avatar.y); }   // full: swap with the tool in hand
     p.tools[slot] = it.kind;
     p.tool = slot;
     this.items.delete(it.id);
@@ -788,7 +823,7 @@ export class Sim {
       if (this.toolbox.length < TOOLBOX_SIZE) { this.toolbox.push(kind); p.tools[slot] = null; }
       return;
     }
-    this.#addItem(kind, p.avatar.lane || 0, p.avatar.x + 0.3 * (p.avatar.facing || 1));
+    this.#addItem(kind, p.avatar.lane || 0, p.avatar.x + 0.3 * (p.avatar.facing || 1), p.avatar.y);
     p.tools[slot] = null;
   }
 
@@ -1025,6 +1060,7 @@ export class Sim {
       piles: [...this.piles.values()].map(p => ({ id: p.id, lane: p.lane, x: round(p.x), y: round(p.y), n: p.n })),
       rack: { boards: this.rack.boards, logs: this.rack.logs.map(round) },
       structure: this.structure.snapshot(),
+      flags: [...this.flags.values()].map(f => ({ id: f.id, owner: f.owner, kind: f.kind, x: round(f.x), y: round(f.y) })),
       items: [...this.items.values()].map(it => ({ id: it.id, kind: it.kind, lane: it.lane, x: round(it.x), y: round(it.y) })),
       toolbox: this.toolbox,
       rescued: this.rescued, struggling: this.struggle.active,

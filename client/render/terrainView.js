@@ -19,7 +19,11 @@ export class TerrainView {
     this.strata = new Container();
     this.grass = new Container();
     this.strata.mask = this.shape;
-    parent.addChild(this.shape, this.strata);
+    // Dark earth behind everything below the generated surface, so holes and
+    // caves look like holes in the ground rather than windows onto the sky.
+    this.back = new Container();
+    this.backs = new Map();       // cx -> Graphics
+    parent.addChild(this.back, this.shape, this.strata);
     this.chunks = new Map();      // id -> { shape, rim, version }
     this.columns = new Map();     // cx -> Graphics
   }
@@ -47,7 +51,9 @@ export class TerrainView {
     }
     for (const [cx, g] of this.columns) {
       g.visible = cx >= cx0 && cx <= cx1;
-      if (cx < cx0 - 8 || cx > cx1 + 8) { g.destroy(); this.columns.delete(cx); }
+      const b = this.backs.get(cx);
+      if (b) b.visible = g.visible;
+      if (cx < cx0 - 8 || cx > cx1 + 8) { g.destroy(); this.columns.delete(cx); b?.destroy(); this.backs.delete(cx); }
     }
   }
 
@@ -93,6 +99,22 @@ export class TerrainView {
     g.fill({ color: 0xffe2b0, alpha: 0.12 });
     this.strata.addChild(g);
     this.columns.set(cx, g);
+    const back = new Graphics();
+    const bp = [];
+    for (const x of xs) bp.push(x, surf(x) - 0.15);
+    bp.push(x1, 0, x0, 0);
+    back.poly(bp).fill(0x3a2b22);
+    const deep = [];
+    for (const x of xs) deep.push(x, surf(x) - 2.2 + wob(x));
+    deep.push(x1, 0, x0, 0);
+    back.poly(deep).fill(0x2e231d);
+    for (let k = 0; k < 30; k++) {
+      const px = x0 + hash1(cx * 313 + k, t.seed + 2) * size, py = hash1(cx * 313 + k + 99, t.seed + 2) * (surf(px) - 0.5);
+      back.ellipse(px, py, 0.12, 0.07);
+    }
+    back.fill({ color: 0x000000, alpha: 0.18 });
+    this.back.addChild(back);
+    this.backs.set(cx, back);
   }
 
   #build(id, cx, cy, existing) {

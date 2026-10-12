@@ -1,5 +1,6 @@
 import { CELL, CHUNK, WORLD_HEIGHT } from './constants.mjs';
 import { mulberry32, fbm1, noise1 } from './rng.mjs';
+import { FORK, planForks, carveFork } from './fork.mjs';
 
 // Editable terrain: a grid of density nodes (0 = air, 255 = solid, threshold
 // 127.5) plus a rock mask that cannot be dug. Contours are extracted per chunk
@@ -14,10 +15,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
 export class Terrain {
-  // profile(terrain) -> { h, rockBump, soilDepth } replaces the built-in
-  // generator (the lane prototype supplies its own height profiles).
-  constructor(length, seed, profile = null) {
-    this.profile = profile;
+  constructor(length, seed) {
     this.seed = seed >>> 0;
     this.length = length;
     this.nx = Math.round(length / CELL) + 1;
@@ -33,6 +31,7 @@ export class Terrain {
     // Bumped whenever a chunk's nodes change; consumers keep their own copies.
     this.chunkVersion = new Uint32Array(this.chunksX * this.chunksY);
     this.features = [];
+    this.forks = [];
     this.generate();
   }
 
@@ -40,11 +39,6 @@ export class Terrain {
 
   generate() {
     const { nx, ny, seed } = this;
-    if (this.profile) {
-      const { h, rockBump, soilDepth } = this.profile(this);
-      this.#fill(h, rockBump, soilDepth);
-      return;
-    }
     const rand = mulberry32(seed);
     const h = new Float32Array(nx);
     const soilDepth = new Float32Array(nx);
@@ -74,6 +68,9 @@ export class Terrain {
       this.features.push(f);
       cursor += 65 + rand() * 45;
     }
+
+    // Route forks: the road is levelled around each, and other set pieces keep clear.
+    this.forks = planForks(this.length, mulberry32(seed ^ 0xf0f0), this.features);
 
     for (let ix = 0; ix < nx; ix++) {
       const x = ix * CELL;
@@ -109,7 +106,16 @@ export class Terrain {
       h[ix] = h[ix] * (1 - a) + startH * a;
       h[ix] = h[ix] * (1 - b) + endH * b;
     }
+    for (const k of this.forks) {
+      k.h0 = h[Math.round(k.x0 / CELL)];
+      for (let ix = 0; ix < nx; ix++) {
+        const x = ix * CELL, a = k.x0 + FORK.flat[0], b2 = k.x0 + FORK.flat[1];
+        const w = smoothstep(a - 12, a, x) * (1 - smoothstep(b2, b2 + 12, x));
+        if (w > 0) { h[ix] += (k.h0 - h[ix]) * w; rockBump[ix] *= 1 - w; soilDepth[ix] = Math.max(soilDepth[ix], 3 * w); }
+      }
+    }
     this.#fill(h, rockBump, soilDepth);
+    for (const k of this.forks) carveFork(this, k);
   }
 
   #fill(h, rockBump, soilDepth) {

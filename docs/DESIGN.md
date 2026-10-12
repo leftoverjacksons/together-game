@@ -64,7 +64,7 @@ Design pillars:
   - animals as small puzzles
   - a warm, hand-made feel
 - **Lesson for next time:** pin down the actual complaint ("2D will get old": the same obstacles? no choices? the same scenery?) before prototyping a structural change, and sketch cheaply first.
-- **The prototype code** (`shared/lanes/`, `client/lanes/`, the menu checkbox) is still in the repo and still works. Remove it once the new direction is settled. The useful pieces may be reused: gap levelling, foot-crossing rules, and per-lane collision categories.
+- **The prototype code was removed on 2026-10-12.** It remains in git history (commit `88827f1`) if pieces are ever wanted again: gap levelling, foot-crossing rules, per-lane collision categories.
 
 ---
 
@@ -158,9 +158,38 @@ Design pillars:
 
 ---
 
-## 3c. Route forks and scouting **[DECIDED 2026-10-12, not built yet]**
+## 3c. Route forks and scouting **[DECIDED 2026-10-12; first fork built 2026-10-12]**
 
 Variety within the side view, using height rather than depth: a side view shows height for free, so a choice between routes is visible on screen and easy to judge.
+
+### Geometry constraint (learned while building)
+- A side view has **one ground surface at any x**. Two routes can only split where one route **crosses the other's entrance**.
+- Two consequences:
+  - **Any opening down to a lower route is a gap the upper route must cross.** If it's open, the upper route needs a bridge about 10 m long.
+  - **An upper route cannot come back down over the lower route's exit.**
+- The first fork solves this with **turf crusts**:
+  - The entrance and exit of the lower route are covered by a thin crust of soil.
+  - The high route drives straight over them.
+  - The low route opens them by digging: down through the entrance crust, and up through the exit crust.
+
+### The first fork, as built (`shared/fork.mjs`)
+- **Placement:** one per stretch, just after the first set piece past 80 m. Later set pieces move along the road to make room, and the road is levelled over the fork.
+- **The cave, in fork-relative metres:**
+  - entrance ramp 0–11.4 at 30°, under a 0.6 m crust
+  - cave room 11.4–44, floor 7.2 m below the road, ceiling 2.3 m below
+  - a soil cave-in plug at 27–29.5, floor to ceiling
+  - exit ramp 44–71.5: an S-curve, level at both ends and 20° at its steepest, under a 0.6 m crust
+- **High route:** a 6 m crevasse (1.5 m deep) at 19–25. Bridge it with boards or fill it with soil. The cave roof under it is lined with rock, so surface work can't collapse into the cave.
+- **Low route, things to find:**
+  - **A fox den,** reachable only on foot: drop down a narrow shaft at the foot of the entrance ramp, and jump back out.
+  - **A spare jack** lying on the cave floor.
+- **Darkness:** underground it is dark whatever the time of day, and headlamps and headlights come on. Holes below the generated surface now show dark earth instead of sky.
+- **Camera:** on the approach it frames the whole entrance and cave. Inside the fork it keeps the road and the cave floor both in view.
+- **Hint:** a one-time message when you reach the fork.
+- **Scouting flags:**
+  - **T** plants "good" and **X** plants "blocked". Press again beside your own flag to pull it up. Four flags each at most.
+  - Your partner is told which route you marked (cave or high route).
+- **Rescue and pick-up** now check height as well as distance, so you can't reach through the ground.
 
 ### Forks for the camper
 - Every few hundred metres the strip **splits vertically**, and the two routes rejoin later:
@@ -476,7 +505,7 @@ Variety within the side view, using height rather than depth: a side view shows 
 4. **M4 — Animals: rescue interactions, small animals as the score, large animals as helpers.** *(First pass done 2026-10-10.)* → **Engine checkpoint next** (see §12).
 5. ~~**L — Lanes.**~~ Prototyped and rejected 2026-10-12 (§3b).
 5a. **A — Art test (next):** pixel vs. painted in the same scene, free tools only. Stage 1 is the pixel pipeline plus hand-written sprites; stage 2 is real assets if pixel wins (`docs/ART.md` §7). Plus a low-resolution rendering pipeline, which may also be the performance fix.
-5b. **F — Forks and scouting:** vertical route forks (high = build, low = dig), scouting, marker flags, places only travellers on foot can reach (§3c).
+5b. **F — Forks and scouting:** vertical route forks (high = build, low = dig), scouting, marker flags, places only travellers on foot can reach (§3c). *(First fork built 2026-10-12; play-test next.)*
 6. M5 — Stretches, camps, sanctuary, meta-progression.
 7. M6 — Local co-op and gamepad support.
 8. Throughout — art, ambience, audio.
@@ -506,6 +535,7 @@ Variety within the side view, using height rather than depth: a side view shows 
 | 2026-10-10 | The dog is a border collie; it boards and leaves the camper with the travellers. |
 | 2026-10-10 | Night and storms first pass: day cycle, automatic storms (slick tyres and footing, slumping, lightning), lightmap with headlamps, headlights, lantern, fireflies and fox night vision. |
 | 2026-10-12 | **Lanes rejected after play-testing**: they felt locked in and less charming, and weakened the cross-section view. Back to the side view. Freshness comes from vertical route forks (high = build, low = dig) with one player scouting on foot while the other waits with the camper, places only travellers on foot can reach, a map between stretches, and biomes and events (§3c). |
+| 2026-10-12 | First route fork built: a cave under turf crusts (low = dig in, through a cave-in, and out, in the dark; fox den on foot) vs. the surface (high = bridge or fill a crevasse). Scouting flags (T/X). Lane prototype code removed. |
 | 2026-10-12 | Pixel test stage 1 built: low-resolution pipeline (1/scale render, nearest upscale, snapped camera at 16 px/m), hand-made pixel sprites for both travellers, the collie and the wheel, and an optional palette snap. |
 | 2026-10-12 | Art re-opened: test pixel art against the painted look, free tools only (SpriteCook dropped: not free). Stage 1 pixelates the existing art through a low-resolution pipeline and adds hand-written sprites; stage 2 brings in free generated, drawn or pack art plus a cleanup script, if pixel wins. Brief in `docs/ART.md` §7. |
 | 2026-10-12 | Lane prototype built, in three.js, as a separate mode beside the side-view game. Answers recorded in §3b: some impassable dividers; shallow water drivable, deep water needs a bridge; dead ends allowed; animals mostly in hard lanes; players may split up and the camera widens. |

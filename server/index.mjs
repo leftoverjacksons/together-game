@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { WebSocketServer } from 'ws';
 import { Sim } from '../shared/sim.mjs';
-import { LaneSim } from '../shared/lanes/laneSim.mjs';
 import { TICK_HZ, SNAPSHOT_HZ, MAX_PLAYERS } from '../shared/constants.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -35,12 +34,6 @@ export function createGameServer() {
     return ++b.count > 30;
   }
 
-  async function readBody(req) {
-    let body = '';
-    for await (const chunk of req) { body += chunk; if (body.length > 1024) return {}; }
-    try { const v = JSON.parse(body || '{}'); return v && typeof v === 'object' ? v : {}; } catch { return {}; }
-  }
-
   function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(data));
@@ -58,13 +51,12 @@ export function createGameServer() {
         if (rooms.size >= MAX_ROOMS) return json(res, 503, { error: 'The campground is full. Try again later.' });
         let code; do code = newCode(); while (rooms.has(code));
         const seed = randomBytes(4).readUInt32LE(0);
-        const mode = (await readBody(req)).mode === 'lanes' ? 'lanes' : 'side';
-        rooms.set(code, { sim: mode === 'lanes' ? new LaneSim(seed) : new Sim(seed), mode, sessions: [], touched: Date.now(), acc: 0 });
-        return json(res, 200, { code, mode });
+        rooms.set(code, { sim: new Sim(seed), sessions: [], touched: Date.now(), acc: 0 });
+        return json(res, 200, { code });
       }
       if (req.method === 'GET' && url.pathname.startsWith('/api/rooms/')) {
         const room = rooms.get(url.pathname.slice(11).toUpperCase());
-        return room ? json(res, 200, { players: room.sessions.length, mode: room.mode }) : json(res, 404, { error: 'No trip with that code.' });
+        return room ? json(res, 200, { players: room.sessions.length }) : json(res, 404, { error: 'No trip with that code.' });
       }
       if (req.method === 'GET' || req.method === 'HEAD') {
         const file = STATIC[url.pathname] || (DIST_FILE.test(url.pathname) ? 'dist' + url.pathname : null) || (ASSET_FILE.test(url.pathname) && !url.pathname.includes('..') ? 'public' + url.pathname : null);

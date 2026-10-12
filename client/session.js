@@ -1,5 +1,4 @@
 import { Sim } from '../shared/sim.mjs';
-import { LaneSim } from '../shared/lanes/laneSim.mjs';
 import { TICK_HZ, SNAPSHOT_HZ } from '../shared/constants.mjs';
 
 // Both session types deliver the same messages to `onmessage`, so the game
@@ -42,9 +41,8 @@ export class OnlineSession {
 }
 
 export class LocalSession {
-  constructor(name, mode = 'side', seed = null) {
+  constructor(name, seed = null) {
     this.name = name;
-    this.mode = mode;
     this.seed = seed;
     this.onmessage = () => {};
     this.onstatus = () => {};
@@ -53,7 +51,7 @@ export class LocalSession {
 
   connect() {
     const seed = this.seed ?? ((Math.random() * 2 ** 32) >>> 0);
-    this.sim = this.mode === 'lanes' ? new LaneSim(seed) : new Sim(seed);
+    this.sim = new Sim(seed);
     this.id = 'local';
     this.sim.addPlayer(this.id, this.name);
     this.onstatus('offline');

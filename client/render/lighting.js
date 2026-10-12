@@ -14,7 +14,7 @@ function canvasTexture(w, h, draw) {
 }
 
 const lerp = (a, b, t) => a + (b - a) * t;
-function mixColor(c1, c2, t) {
+export function mixColor(c1, c2, t) {
   const r = lerp((c1 >> 16) & 255, (c2 >> 16) & 255, t), g = lerp((c1 >> 8) & 255, (c2 >> 8) & 255, t), b = lerp(c1 & 255, c2 & 255, t);
   return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
 }
@@ -67,7 +67,7 @@ export class Lighting {
   }
 
   // ambient: the darkness colour; lights: [{ kind: 'glow'|'cone', x, y (screen px), r (px), len, angle, color, alpha }]
-  update({ w, h, ambient, lights, night, storm, time }) {
+  update({ w, h, ambient, lights, night, storm, time, sky: skyVis }) {
     const active = ambient !== 0xffffff || lights.length && night > 0.02;
     this.overlay.visible = active;
     const sky = this.sky.clear();
@@ -94,7 +94,7 @@ export class Lighting {
     for (let i = n; i < this.pool.length; i++) this.pool[i].visible = false;
     this.renderer.render({ container: this.lights, target: this.rt, clear: true, clearColor: ambient });
     // Stars and a moon on clear nights.
-    const vis = night * (1 - storm);
+    const vis = skyVis ?? night * (1 - storm);
     if (vis > 0.02) {
       for (const st of this.stars) sky.circle(st.x * w, st.y * h, st.r).fill({ color: 0xfff6e0, alpha: vis * (0.5 + 0.4 * Math.sin(time * 1.5 + st.p)) });
       sky.circle(w * 0.78, h * 0.13, 26).fill({ color: 0xfdf3d8, alpha: vis * 0.95 });

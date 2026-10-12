@@ -21,7 +21,8 @@ import { AnimalView } from './render/animalView.js';
 import { ANIMALS, RIDE_SPOTS, RESCUE_RANGE } from '../shared/animals.mjs';
 import { Ambience } from './render/ambience.js';
 import { Particles } from './render/particles.js';
-import { Lighting, ambientColor } from './render/lighting.js';
+import { Lighting, ambientColor, mixColor } from './render/lighting.js';
+import { FORK, forkZone } from '../shared/fork.mjs';
 import { daylight, phaseName } from '../shared/weather.mjs';
 import { PAL } from './render/palette.js';
 import { PIXEL } from './pixel/mode.js';
@@ -98,7 +99,8 @@ export class Game {
     this.itemsForest = new ItemsView(this.forestView.items);
     this.itemsRoad = new ItemsView(this.world);
     this.cable = new Graphics();
-    this.world.addChild(this.cable, this.animalFx);
+    this.flagsG = new Graphics();
+    this.world.addChild(this.cable, this.animalFx, this.flagsG);
     this.roadLumber = new LumberView(this.world);
     this.outside = new Container();
     this.world.addChild(this.outside);
@@ -141,6 +143,12 @@ export class Game {
       case 'fx':
         if (msg.kind === 'snap') this.audio?.snap(this.cam.x);
         if (msg.kind === 'rescued') this.#onRescued(msg);
+        if (msg.kind === 'flag') {
+          const where = msg.zone === 'low' ? 'the cave route' : msg.zone === 'high' ? 'the high route' : 'this spot';
+          if (msg.by === this.myId) this.hud.toast(`Flag planted: ${msg.flag === 'good' ? 'good' : 'blocked'} (press again beside it to pull it up)`);
+          else this.hud.toast(`${msg.name} marked ${where}: ${msg.flag === 'good' ? 'looks good!' : 'blocked.'}`);
+          this.audio?.chime();
+        }
         break;
       case 'snap': {
         this.#updateColliders(msg.structure);
@@ -263,6 +271,9 @@ export class Game {
       if (rescuing !== this.rescuing) { this.rescuing = rescuing; this.session.send({ t: 'rescue', on: rescuing }); }
       if (rescuing) working = true;
       if (inp.hit('g') && this.myTool) this.session.send({ t: 'droptool' });
+      // Scouting flags: T marks "good", X marks "blocked"; again beside your own flag pulls it up.
+      if (inp.hit('t') && (me.lane || 0) === 0) this.session.send({ t: 'flag', kind: 'good' });
+      if (inp.hit('x') && (me.lane || 0) === 0) this.session.send({ t: 'flag', kind: 'blocked' });
       if (inp.hit('b') && latestMe?.boards) this.session.send({ t: 'drop' });
       const hook = this.#hookContext(view);
       if (hook.prompt && !prompt) prompt = hook.prompt;
@@ -378,7 +389,7 @@ export class Game {
     }
     const carriedAnimal = (latest.animals || []).find(a => a.state === 'carried' && a.carrier === this.myId);
     if (carriedAnimal) return { prompt: `Carry the ${carriedAnimal.kind} to the camper · <b>E</b> put it down`, action: send({ t: 'carryAnimal', id: carriedAnimal.id }) };
-    const animal = (view.animals || []).find(a => a.state === 'waiting' && a.lane === lane && Math.abs(a.x - me.x) < RESCUE_RANGE);
+    const animal = (view.animals || []).find(a => a.state === 'waiting' && a.lane === lane && Math.abs(a.x - me.x) < RESCUE_RANGE && Math.abs(a.y - me.y) < 2);
     if (animal) {
       const def = ANIMALS[animal.kind];
       if (def.rescue === 'free') return { prompt: `Hold <b>E</b> to ${def.verb}${animal.p > 0 ? ` · ${Math.round(animal.p * 100)}%` : ''}${def.size === 'large' ? ' · faster together' : ''}`, rescue: true };
@@ -386,7 +397,7 @@ export class Game {
       if (def.rescue === 'dig') return { prompt: `Dig the rabbit out of its collapsed burrow with the <b>shovel</b>` };
       if (def.rescue === 'saw') return { prompt: `Saw the branch pinning the chipmunk, or haul it away` };
     }
-    const item = (latest.items || []).find(it => it.lane === lane && Math.abs(it.x - me.x) < ITEM_RANGE);
+    const item = (latest.items || []).find(it => it.lane === lane && Math.abs(it.x - me.x) < ITEM_RANGE && Math.abs(it.y - me.y) < 2);
     if (item) {
       const full = !(latestMe?.tools || []).includes(null);
       return { prompt: `<b>E</b> ${full ? 'swap for' : 'pick up'} the ${TOOL_NAMES[item.kind].toLowerCase()}`, action: send({ t: 'pickup', id: item.id }) };
@@ -658,6 +669,28 @@ export class Game {
     }
   }
 
+  // Scouting flags: a pole with a green (good) or red (blocked) pennant.
+  #drawFlags(view) {
+    const g = this.flagsG.clear();
+    for (const f of view.latest.flags || []) {
+      const wave = Math.sin(this.time * 3 + f.id) * 0.05;
+      g.rect(f.x - 0.035, f.y, 0.07, 2.3).fill(0x6b4a32);
+      g.poly([f.x + 0.035, f.y + 2.28, f.x + 1.0, f.y + 1.98 + wave, f.x + 0.035, f.y + 1.6]).fill(f.kind === 'good' ? 0x6fbf73 : 0xd8574a);
+      g.circle(f.x, f.y + 2.33, 0.07).fill(0xf2e6c8);
+    }
+  }
+
+  // A one-time hint when the travellers first reach a fork.
+  #forkHints(view) {
+    const c = view.camper;
+    for (const f of this.terrain.forks) {
+      this.forkSeen = this.forkSeen || new Set();
+      if (this.forkSeen.has(f.x0) || Math.abs(c.x - (f.x0 - 18)) > 14) continue;
+      this.forkSeen.add(f.x0);
+      this.hud.toast('A fork! The road ahead is hollow: a cave runs beneath it, under a thin crust of turf. Scout a route on foot (T: mark it good · X: blocked).');
+    }
+  }
+
   // Testing: snap every pixel on screen to one fixed palette (P).
   #togglePaletteSnap() {
     PIXEL.snap = !PIXEL.snap;
@@ -745,8 +778,13 @@ export class Game {
     const ft = this.time - (this.flashAt ?? -9);
     const flash = ft < 0.08 ? 1 : ft < 0.16 ? 0.2 : ft < 0.26 ? 0.8 : Math.max(0, 0.6 - ft * 2);
     const lights = [];
-    if (night > 0.02 || storm > 0.2) {
-      const strength = Math.max(night, storm * 0.6);
+    // Underground (the low route of a fork) it is dark whatever the time of day.
+    const focus = me.mode === 'out' ? me : c;
+    const caveTarget = forkZone(this.terrain.forks, focus.x, focus.y + 0.5) === 'low' ? 1 : 0;
+    this.cave = (this.cave || 0) + (caveTarget - (this.cave || 0)) * Math.min(1, (this.lastDt || 1 / 60) * 2.5);
+    const cave = this.cave;
+    if (night > 0.02 || storm > 0.2 || cave > 0.02) {
+      const strength = Math.max(night, storm * 0.6, cave);
       for (const p of view.players) {
         const a = p.id === this.myId ? me : p.a;
         if (!(p.connected || p.id === this.myId) || a.mode !== 'out') continue;
@@ -776,11 +814,13 @@ export class Game {
         }
       }
     }
-    this.lighting.update({ w, h, ambient: ambientColor(day, storm, flash), lights, night, storm, time: this.time });
+    const ambient = cave > 0.01 ? mixColor(ambientColor(day, storm, flash), 0x1f1c22, cave * 0.88) : ambientColor(day, storm, flash);
+    this.lighting.update({ w, h, ambient, lights, night: Math.max(night, cave), storm: Math.max(storm, cave * 0.999), time: this.time, sky: night * (1 - storm) * (1 - cave) });
   }
 
   #render(dt, view, { working }) {
     this.workingNow = working;
+    this.lastDt = dt;
     const { width: w, height: h } = this.app.screen;
     const c = view.camper;
     const me = this.me;
@@ -791,6 +831,14 @@ export class Game {
     for (const p of view.players) if (p.id !== this.myId && p.connected) {
       const pw = p.a.mode === 'in' ? this.#camperPoint(c, p.a.lx, INTERIOR.floorY) : p.a;
       pts.push([pw.x, pw.y + 0.8]);
+    }
+    // At a fork, keep both routes in view: on the approach, frame the whole
+    // entrance and cave; inside, keep the cave floor and the road both on screen.
+    for (const f of this.terrain.forks) {
+      const near = pts.filter(([x]) => x > f.x0 - 32 && x < f.x0 + FORK.exitTop + 4);
+      if (!near.length) continue;
+      if (near.some(([x]) => x < f.x0 + 6)) pts.push([f.x0 - 3, f.h0 + 2], [f.x0 + FORK.plug[1] + 3, f.h0 - FORK.floor]);
+      for (const [x] of near) pts.push([x, f.h0 - FORK.floor + 0.3], [x, f.h0 + 2.5]);
     }
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (const [x, y] of pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
@@ -839,6 +887,8 @@ export class Game {
     this.itemsForest.update((view.latest.items || []).filter(it => it.lane === 1), this.time);
     this.itemsRoad.update((view.latest.items || []).filter(it => it.lane === 0), this.time);
     this.#drawCable(view);
+    this.#drawFlags(view);
+    this.#forkHints(view);
 
     // Travellers.
     view.players.forEach((p, index) => {
