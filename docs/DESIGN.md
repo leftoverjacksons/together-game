@@ -8,7 +8,7 @@ Last updated: 2026-10-12
 > **Start here (2026-10-12).**
 > - The three-lane prototype was played and **set aside**; we are back to the side view (§3b).
 > - The new direction for keeping the side view fresh: **route forks** with one player scouting on foot (§3c).
-> - Art is being re-tested as **pixel art generated with SpriteCook**. The brief for that session is `docs/ART.md` §7.
+> - Art is being re-tested as **pixel art, using free tools only**. Stage 1 pixelates the existing art and adds hand-written sprites; no image generation is needed. The brief is `docs/ART.md` §7.
 
 ---
 
@@ -364,7 +364,9 @@ Variety within the side view, using height rather than depth: a side view shows 
 
 ## 11. Art direction
 
-- **[OPEN 2026-10-12] Pixel art is being re-tested** against the painted vector look, using SpriteCook to generate assets. The brief for that session is `docs/ART.md` §7.
+- **[OPEN 2026-10-12] Pixel art is being re-tested** against the painted vector look, **with free tools only** (SpriteCook was dropped: it isn't free). The brief is `docs/ART.md` §7.
+  - **Stage 1, Claude, automatic:** render the existing code-drawn art through a low-resolution pixel pipeline, and hand-write pixel sprites (as data in code) for the travellers, the border collie and the wheel.
+  - **Stage 2, only if pixel wins:** real assets from free AI image tools (Bing, Gemini, the ChatGPT free tier), free editors (Pixelorama, Piskel, LibreSprite), or free packs (Kenney). A cleanup script snaps them to a true pixel grid and our palette.
   - The earlier flicker almost certainly came from sub-pixel camera movement and non-integer scaling. The fix is to render the world into a low-resolution target, snap the camera to whole pixels, and scale up by a whole number with nearest-neighbour filtering. That also keeps the rotating camper and the marching-squares terrain on one consistent pixel grid (compare *Noita*), and is likely lighter on laptops.
   - Cozy pixel references: *Stardew Valley*, *Eastward*. Pixel art with fully destructible terrain: *Noita*, *Terraria*.
   - Decide by comparing the same scene in both styles side by side.
@@ -473,7 +475,7 @@ Variety within the side view, using height rather than depth: a side view shows 
 3. **M3 — Winch, items and finds, dropping and handing items, cargo mass.** *(First pass done 2026-10-10.)*
 4. **M4 — Animals: rescue interactions, small animals as the score, large animals as helpers.** *(First pass done 2026-10-10.)* → **Engine checkpoint next** (see §12).
 5. ~~**L — Lanes.**~~ Prototyped and rejected 2026-10-12 (§3b).
-5a. **A — Art test (next):** pixel art via SpriteCook vs. the painted look, in the same scene (`docs/ART.md` §7). Plus a low-resolution rendering pipeline, which may also be the performance fix.
+5a. **A — Art test (next):** pixel vs. painted in the same scene, free tools only. Stage 1 is the pixel pipeline plus hand-written sprites; stage 2 is real assets if pixel wins (`docs/ART.md` §7). Plus a low-resolution rendering pipeline, which may also be the performance fix.
 5b. **F — Forks and scouting:** vertical route forks (high = build, low = dig), scouting, marker flags, places only travellers on foot can reach (§3c).
 6. M5 — Stretches, camps, sanctuary, meta-progression.
 7. M6 — Local co-op and gamepad support.
@@ -504,7 +506,7 @@ Variety within the side view, using height rather than depth: a side view shows 
 | 2026-10-10 | The dog is a border collie; it boards and leaves the camper with the travellers. |
 | 2026-10-10 | Night and storms first pass: day cycle, automatic storms (slick tyres and footing, slumping, lightning), lightmap with headlamps, headlights, lantern, fireflies and fox night vision. |
 | 2026-10-12 | **Lanes rejected after play-testing**: they felt locked in and less charming, and weakened the cross-section view. Back to the side view. Freshness comes from vertical route forks (high = build, low = dig) with one player scouting on foot while the other waits with the camper, places only travellers on foot can reach, a map between stretches, and biomes and events (§3c). |
-| 2026-10-12 | Art re-opened: test pixel art generated with SpriteCook (through its Claude Code plugin, in a local session) against the painted look. Brief in `docs/ART.md` §7. |
+| 2026-10-12 | Art re-opened: test pixel art against the painted look, free tools only (SpriteCook dropped: not free). Stage 1 pixelates the existing art through a low-resolution pipeline and adds hand-written sprites; stage 2 brings in free generated, drawn or pack art plus a cleanup script, if pixel wins. Brief in `docs/ART.md` §7. |
 | 2026-10-12 | Lane prototype built, in three.js, as a separate mode beside the side-view game. Answers recorded in §3b: some impassable dividers; shallow water drivable, deep water needs a bridge; dead ends allowed; animals mostly in hard lanes; players may split up and the camera widens. |
 | 2026-10-10 | **Direction change:** three parallel lanes, seen side-on from a locked raised camera, with gaps for the camper and crossing anywhere on foot; biomes along the route (woods and creek first), each lane with its own character. Prototype first; engine checkpoint brought forward (leaning three.js). |
 | 2026-10-10 | Pressure sources: storms (slick ground, slumping earthworks) and night (headlamps and headlights only). |

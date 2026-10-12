@@ -1,6 +1,6 @@
 # Together — Art Brief and Asset Slots
 
-> **2026-10-12:** a **pixel art test with SpriteCook** is next. See §7. Sections 1–6 describe the painted vector look, which remains the default until the test is judged.
+> **2026-10-12:** a **free pixel-art test** is next. See §7. Sections 1–6 describe the painted vector look, which remains the default until the test is judged.
 
 How to make art that drops into the game. Every visual has a **slot**. An image file listed for a slot in `public/assets/manifest.json` replaces the code-drawn placeholder; remove it and the placeholder returns. Art can therefore be replaced one piece at a time.
 
@@ -187,71 +187,89 @@ Use the same **style block** in every prompt. Most generators can't make true tr
 
 ---
 
-## 7. Pixel art test with SpriteCook (2026-10-12)
+## 7. Pixel art test, free tools only (2026-10-12)
 
-**Goal:** find out whether generated pixel art beats the painted look. Make one small, consistent set, render the game in a proper pixel pipeline, and compare the **same scene in both styles** side by side. The decision is the players'; this section only sets up a fair comparison.
+**Goal:** find out whether pixel art beats the painted look, **without paying for anything**. Compare the **same scene in both styles** side by side. The decision is the players'; this section only sets up a fair comparison. (SpriteCook was considered and dropped: it isn't free.)
 
-**Tool:** [SpriteCook](https://www.spritecook.ai/). It generates pixel-art sprites, sprite sheets, short animation loops (idle, walk), tilesets and seamless textures, and exports transparent PNGs. "Themes" and style references keep a set consistent. It has a Claude Code plugin (MCP server), which runs only in a **local** Claude Code session, so this test happens in a local session. The free plan is 40 credits a month, and the site says generated assets may be used commercially. Read the terms before relying on that.
+The test has two stages. Stage 1 needs no new art at all and answers the main question. Stage 2 happens only if pixel art wins.
 
-### 7.1 Ground rules
+### 7.1 Ground rules (both stages)
 - **Strict side view, facing right,** as in §1. Light from the upper left.
 - **Pixel density: 16 px per metre** for everything in the play plane. A traveller is about 28 px tall, the camper body about 112 px long. Background layers use their own lower density.
-- **Palette:** start from the §1 palette (warm, earthy, sage, cream and teal camper). Shade with a warm-to-cool ramp, never pure black. Outlines may be dark brown (`#3a2a20`), selective or absent. No black outlines.
+- **Palette:** a fixed palette built from §1 (warm, earthy, sage, cream and teal camper), about 32 colours, with warm-to-cool shading ramps and no pure black. Outlines may be dark brown (`#3a2a20`), selective or absent; never black. Lospec (free) has palettes to borrow from.
 - **Mood:** cozy, warm, golden hour. References: *Stardew Valley*, *Eastward* (cozy pixel); *Noita*, *Terraria* (pixel art with fully destructible terrain).
-- **No** perspective, text, logos, dithering noise across large areas, or photo textures.
-- **Credits are limited.** Generate in the order below, check results after each step, and stop when credits run low. A small, consistent set beats a big, mixed one.
+- **No** perspective, text, logos, or large dithered areas.
 
-### 7.2 Order and sizes (16 px/m)
+### 7.2 Stage 1: pixelate what we have, plus hand-written sprites (Claude, automatic, free)
 
-| # | Asset | Size (px) | Notes |
-|---|---|---|---|
-| 1 | **Camper (hero)**, side view with cut-away interior | 112 × 54 canvas (7.0 × 3.4 m) | Boxy vintage off-road expedition camper, cream body, one teal stripe, roof rack, ladder at the front, raked nose. Interior: bunk with blue blanket at the back, small kitchen counter, window with orange curtains, driver's seat and wheel at the front. **Save as the SpriteCook theme or style reference** for everything after it. Then split it into `camper.back` (everything) and `camper.front` (outer frame only: roof, pillars, skirt, stripe, bumper, lights, ladder; the rest transparent) on the same canvas. |
-| 2 | Wheel | 23 × 23 | Big knobby tyre, cream hub, perfectly round (it rotates). |
-| 3 | Traveller 0: idle and walk loop | ~16 × 30 frames | Small rounded cheerful hiker, orange shirt, blue trousers, brown boots, yellow beanie with a small headlamp, green backpack. Walk loop 6–8 frames, idle 2–4. Facing right. |
-| 4 | Traveller 1 | same | Same body, teal shirt, brown trousers, red beanie, tan backpack (recolour of #3 if the tool allows). |
-| 5 | Border collie: idle, run, sit | ~18 × 12 frames | Black-and-white border collie, white blaze, chest and paws. Friendly. |
-| 6 | Pine ×2, oak ×1, stump | pine ~128 tall, oak ~104 tall | Full tree, base at the bottom centre. |
-| 7 | Terrain textures, seamless | 32 × 32 each | Grass-topped soil edge (a strip that runs along the ground surface), soil strata ×3 (light, mid, deep brown), rock. These must tile in both directions. |
-| 8 | Log, board | log 64 × 7 (4 m), board 48 × 3 (3 m) | Edge-on views; stretched to length in game. |
-| 9 | Background strips, seamless left–right | e.g. 512 × 128 each | Far peaks, mid hills, far forest, near forest. Paint them clear: the game adds haze. |
-| 10 | (Optional) small animals: rabbit, fox, chipmunk, songbird, deer, hawk | idle loops | Only if credits remain. |
+Stage 1 is all code; no image generation is needed.
 
-The camper layout at 16 px/m (pixels from the top-left of the 112 × 54 canvas):
-- chassis origin (54, 38)
-- floor where feet stand y = 44
-- roof top y ≈ 9
-- rear door centre x = 15
-- driver's seat x = 86
-- nose tip x ≈ 108
-- wheel centres (18, 58) and (90, 58), just below the canvas
-
-### 7.3 Where files go
-- Put images in **`public/assets/pixel/`**, named like `camper-back.png`, `traveller0-walk.png`, `soil-1.png`.
-- List them in a **separate manifest, `public/assets/manifest-pixel.json`**, with `"ppm": 16`, so the painted look stays the default and both can be compared. The slot names are the same as §4. Sprite sheets need new fields (below).
-
-### 7.4 Code needed for the test (small, in the side-view game; PixiJS)
-1. **Switch styles:** `?art=pixel` (and a menu toggle) loads `manifest-pixel.json` instead of `manifest.json` (`client/assets.js`).
-2. **Low-resolution pipeline** (this fixes the old flicker):
+1. **Switch styles:** `?art=pixel` (and a menu toggle) turns on pixel mode. The painted look stays the default.
+2. **Low-resolution pipeline** (this also fixes the flicker seen in earlier attempts):
    - Render the world into a `RenderTexture` at screen size ÷ an integer scale, chosen so about 16–18 m of world fit vertically.
    - Snap the camera to whole low-res pixels.
    - Draw that texture to the screen scaled by the integer, with nearest-neighbour filtering.
-   - Load pixel textures with `scaleMode: 'nearest'`.
    - The HUD (HTML) stays sharp.
-   - The rotating camper and the marching-squares terrain then land on the same pixel grid.
-3. **Sprite-sheet slots:** for example `"traveller0.walk": { "file": "pixel/traveller0-walk.png", "frames": 8, "fps": 10, "anchor": [0.5, 1] }`, plus `idle`. In pixel mode, characters use frame animation instead of the limb-rotation rig.
-4. **Textured terrain:** fill each strata band (`soil0`…`soil4`, `rock`) with its tiling texture instead of a flat colour (Pixi v8 Graphics can fill with a texture). Draw the grass edge strip along the surface contour.
+   - The existing code-drawn art (terrain, camper, trees, background) then becomes "pixelated vector": on a true grid, though not true hand-placed pixel art. Graphics are drawn without antialiasing in this mode.
+   - The rotating camper and the marching-squares terrain land on the same grid.
+3. **Palette snap (optional):** a final pass maps the low-res image to the fixed palette (§7.1), either as a shader or a lookup table. Try it on and off.
+4. **Hand-written sprites** for the pieces that matter most at small size. These are written pixel by pixel as palette-indexed data in code, with frame animation:
+
+   | Sprite | Size (px) | Frames |
+   |---|---|---|
+   | Traveller 0 (orange shirt, blue trousers, yellow beanie with headlamp, green backpack) | ~16 × 30 | idle 2, walk 6, work or dig 4 |
+   | Traveller 1 (teal shirt, brown trousers, red beanie, tan backpack) | same; recolour of traveller 0 | same |
+   | Border collie (black and white, white blaze, chest and paws) | ~18 × 12 | idle 2, run 4, sit 1 |
+   | Camper wheel | 23 × 23 | 1 (it rotates) |
+
+   In pixel mode, characters use these frames instead of the limb-rotation rig. Everything else stays pixelated vector in stage 1.
 5. **Comparison:**
    - Pick a fixed seed and location (the start camp, and the first ravine), and screenshot it in both styles at the same window size.
    - Play a few minutes in each.
    - Note frame rate on the laptops, since pixel mode should be lighter.
 
-### 7.5 What to judge
+### 7.3 Stage 2: real pixel assets, only if pixel wins
+
+**Sources, all free:**
+- **AI image generators with free tiers:** Microsoft Bing Image Creator / Designer, Google Gemini, the ChatGPT free tier. Daily limits and terms change, so check them.
+  - Their output is "fake pixel art" (uneven pixel sizes, off-grid, too many colours), so it goes through the cleanup script (below).
+  - Use them for trees, props and background strips. Consistency across images is weak, so animated characters stay hand-written.
+  - Add to every prompt: *"pixel art, 2D game asset, strict side view facing right, warm golden-hour light from the upper left, cozy muted earthy palette, isolated on a plain flat magenta background"*. Magenta makes background removal easy.
+- **Pixel editors** for drawing or touching up by hand: **Pixelorama** (free, open source, browser or desktop, has animation), **Piskel** (free, browser), **LibreSprite** (free fork of Aseprite).
+- **Ready-made packs:** **Kenney.nl** (public-domain licence), OpenGameArt and itch.io (check each licence). Good for quick placeholders, though they won't match our camper and animals.
+- **Local Stable Diffusion** with a pixel-art add-on is free but needs a decent graphics card; probably not our laptops.
+
+**Cleanup script (Claude writes it; `scripts/pixelize.py`, Python with Pillow).** It turns raw images into game-ready sprites:
+1. Remove the flat background (magenta or another chosen colour) to transparency.
+2. Find the image's real pixel grid, or take a target size, and shrink to true pixels (nearest or majority colour per cell).
+3. Map to the fixed palette (§7.1).
+4. Crop, and slice sprite sheets into frames.
+5. Write PNGs into `public/assets/pixel/` and print a manifest entry for each.
+
+**Asset list and sizes (16 px/m), in priority order:**
+
+| # | Asset | Size (px) | Notes |
+|---|---|---|---|
+| 1 | Camper, cut-away side view | 112 × 54 canvas (7.0 × 3.4 m) | Split into `camper.back` (everything) and `camper.front` (outer frame only) on the same canvas, as in §4. Layout at 16 px/m (from the top-left): chassis origin (54, 38); floor y = 44; roof top y ≈ 9; rear door x = 15; driver's seat x = 86; nose tip x ≈ 108; wheel centres (18, 58) and (90, 58), just below the canvas. Likely hand-made or heavily touched up: it's the hero asset. |
+| 2 | Pine ×2, oak ×1, stump | pine ~128 tall, oak ~104 tall | Base at the bottom centre. AI plus cleanup works well here. |
+| 3 | Terrain textures, seamless | 32 × 32 each | Grass edge strip (runs along the ground surface), soil strata ×3, rock. Must tile both ways. |
+| 4 | Log, board | log 64 × 7 (4 m), board 48 × 3 (3 m) | Edge-on views, stretched to length. |
+| 5 | Background strips, seamless left–right | e.g. 512 × 128 each | Far peaks, mid hills, far forest, near forest. Paint them clear: the game adds haze. |
+| 6 | Small animals: rabbit, fox, chipmunk, songbird, deer, hawk, moose, bear | idle loops | Hand-written or touched up, like the characters. |
+
+**Code for stage 2:**
+- `public/assets/manifest-pixel.json` with `"ppm": 16`, loaded in pixel mode. Same slot names as §4.
+- Sprite-sheet slots, for example `"traveller0.walk": { "file": "pixel/traveller0-walk.png", "frames": 6, "fps": 10, "anchor": [0.5, 1] }`.
+- Textured terrain: fill each strata band (`soil0`…`soil4`, `rock`) with its tiling texture instead of a flat colour. Draw the grass edge strip along the surface contour.
+- Load pixel textures with `scaleMode: 'nearest'`.
+
+### 7.4 What to judge
 - **Charm:** does it feel cozy and warm?
 - **Readability:** soil, rock and grass, the camper interior, small animals.
 - **Consistency across assets.**
 - **Motion:** the camper rotating, the walk cycles.
 - **Performance on the laptops.**
-- **Practicality:** how much hand clean-up the generated art needed.
+- **Practicality:** how much hand work the art needed.
 
-### 7.6 Prompt for the session that runs this test
-> Read `docs/DESIGN.md` (the "Start here" note, §3c and §11) and `docs/ART.md` §7. Using the SpriteCook plugin, generate the pixel art test set in the order in §7.2. Make the camper first and use it as the theme or style reference for the rest, and watch the credits. Save the files to `public/assets/pixel/` with `manifest-pixel.json`. Then implement §7.4 (art switch, low-resolution pipeline, sprite-sheet slots, textured terrain) in the side-view game. Show me side-by-side screenshots of the same scene in the painted and pixel styles. Don't build forks yet.
+### 7.5 Prompt for the session that runs stage 1
+> Read `docs/DESIGN.md` (the "Start here" note, §3c and §11) and `docs/ART.md` §7. Do **stage 1** of the pixel art test (§7.2) in the side-view game: the `?art=pixel` switch, the low-resolution pipeline, the optional palette snap, and hand-written pixel sprites for both travellers, the border collie and the wheel. Then show me side-by-side screenshots of the same scene in the painted and pixel styles, and how heavy each feels. Don't build forks yet, and don't use paid tools.
