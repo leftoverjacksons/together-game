@@ -3,9 +3,11 @@
 // service whose build command predates this setup).
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 const require = createRequire(import.meta.url);
-const missing = ['esbuild', 'pixi.js', 'planck', 'ws'].filter(name => {
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const missing = Object.keys(pkg.dependencies).filter(name => {
   try { require.resolve(name); return false; } catch { return true; }
 });
 if (missing.length) {
