@@ -1,4 +1,6 @@
 import { Container, Graphics } from 'pixi.js';
+import { PIXEL } from '../pixel/mode.js';
+import { collieSheet, pixelSprite } from '../pixel/textures.js';
 import { artSprite } from '../assets.js';
 
 // Animals drawn in metres, facing +x, feet at the origin. Art slots
@@ -37,7 +39,13 @@ export class AnimalView {
     this.root.addChild(this.scene, this.flip, this.front, this.fx);
     this.legs = [];
     const art = artSprite('animal.' + kind);
-    if (art) this.flip.addChild(art);
+    if (PIXEL.on && kind === 'dog') {
+      // Pixel mode: the hand-made collie sprite.
+      this.dogSheet = collieSheet();
+      this.pixDog = pixelSprite(this.dogSheet.idle[0], 0.45, 1);
+      this.flip.addChild(this.pixDog);
+      this.bodyH = 0.45;
+    } else if (art) this.flip.addChild(art);
     else if (Q[kind]) this.#quadruped(Q[kind]);
     else this.#small(kind);
   }
@@ -188,6 +196,10 @@ export class AnimalView {
       this.wings.rotation = flap * 0.3;
     }
     if (this.head) this.head.rotation = a.state === 'waiting' ? -0.25 + Math.sin(time * 1.3) * 0.05 : a.moving ? Math.sin(time * 7) * 0.05 : 0;
+    if (this.pixDog) {
+      const sitting = a.state === 'riding-dog' || a.state === 'riding' || (a.state === 'waiting' && !a.moving);
+      this.pixDog.texture = a.moving ? this.dogSheet.run[Math.floor(time * 12) % 4] : sitting && a.state !== 'waiting' ? this.dogSheet.sit[0] : this.dogSheet.idle[Math.floor(time * 3) % 2];
+    }
     this.#drawScene(a, def, groundY);
     // Call-out, progress ring, bark lines.
     const fx = this.fx.clear();

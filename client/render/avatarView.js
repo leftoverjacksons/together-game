@@ -3,6 +3,9 @@ import { PAL } from './palette.js';
 import { artSprite } from '../assets.js';
 import { toolGraphic } from './toolArt.js';
 import { TOOLS } from '../../shared/constants.mjs';
+import { PIXEL } from '../pixel/mode.js';
+import { travellerSheet, travellerHand, pixelSprite } from '../pixel/textures.js';
+import { PPM } from '../pixel/sprites.js';
 
 // A rounded little traveller drawn in metres, feet at the origin, facing +x.
 export class AvatarView {
@@ -53,6 +56,38 @@ export class AvatarView {
     this.shownBoards = 0;
     this.shadow = new Graphics().ellipse(0, 0.02, 0.32, 0.06).fill({ color: 0x000000, alpha: 0.18 });
     this.root.addChildAt(this.shadow, 0);
+    // Pixel mode: a hand-made frame-animated sprite replaces the limb rig.
+    if (PIXEL.on) {
+      this.sheet = travellerSheet(colorIndex);
+      this.pix = pixelSprite(this.sheet.idle[0], 0.5, 1);
+      for (const part of [this.legB, this.legF, this.armB, body, head]) part.visible = false;
+      this.armF.removeChildren();
+      this.toolHolder = new Container();
+      for (const g of Object.values(this.tools)) { g.position.set(0, 0); this.toolHolder.addChild(g); }
+      this.armF.visible = false;
+      this.flip.addChild(this.pix, this.toolHolder);
+      this.shadow.visible = false;
+    }
+  }
+
+  // Pick the pixel frame for the current pose, and put the tool in its hand.
+  #pixelPose(a, time, { moving, inside, seated, pushing, working, carrying, tool }) {
+    let name = 'idle', k = Math.floor(time * 2) % 2;
+    if (seated) { name = 'sit'; k = 0; }
+    else if (working) { name = 'work'; k = Math.floor(time * 10) % 4; }
+    else if (pushing) { name = 'push'; k = 0; }
+    else if (carrying) { name = 'carry'; k = 0; }
+    else if (!a.onGround && !inside) { name = 'air'; k = 0; }
+    else if (moving) { name = 'walk'; k = Math.floor(a.walkPhase * 3) % 6; }
+    this.pix.texture = this.sheet[name][k];
+    const [hx, hy] = travellerHand(name, k);
+    const w = this.pix.texture.width, h = this.pix.texture.height;
+    this.toolHolder.position.set((hx - w / 2) / PPM, (h - hy) / PPM);
+    // Same angles as the limb rig's front arm: 0 hangs down, positive swings forward.
+    const swing = name === 'work' ? [2.2, 1.6, 0.9, 0.3][k] : name === 'push' ? 1.5 : name === 'carry' ? 2.4 : name === 'air' ? 1.2 : 0;
+    this.toolHolder.rotation = swing;
+    for (const [n, g] of Object.entries(this.tools)) g.visible = !inside && !carrying && n === tool;
+    this.flip.y = 0;
   }
 
   // a: avatar state with world x,y already resolved; working: tool swing.
@@ -84,6 +119,7 @@ export class AvatarView {
     }
     for (const [name, g] of Object.entries(this.tools)) g.visible = !inside && !carrying && name === tool;
     this.flip.y = moving ? Math.abs(Math.sin(ph)) * 0.04 : seated ? -0.3 : 0;
+    if (this.pix) this.#pixelPose(a, time, { moving, inside, seated, pushing, working, carrying, tool });
   }
 }
 

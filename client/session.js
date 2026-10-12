@@ -42,16 +42,17 @@ export class OnlineSession {
 }
 
 export class LocalSession {
-  constructor(name, mode = 'side') {
+  constructor(name, mode = 'side', seed = null) {
     this.name = name;
     this.mode = mode;
+    this.seed = seed;
     this.onmessage = () => {};
     this.onstatus = () => {};
     this.code = null;
   }
 
   connect() {
-    const seed = (Math.random() * 2 ** 32) >>> 0;
+    const seed = this.seed ?? ((Math.random() * 2 ** 32) >>> 0);
     this.sim = this.mode === 'lanes' ? new LaneSim(seed) : new Sim(seed);
     this.id = 'local';
     this.sim.addPlayer(this.id, this.name);

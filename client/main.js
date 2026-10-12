@@ -1,6 +1,7 @@
 import { Game } from './game.js';
 import { OnlineSession, LocalSession } from './session.js';
 import { Audio } from './audio.js';
+import { choosePixelMode } from './pixel/mode.js';
 
 const audio = new Audio();
 // Browsers can suspend audio (tab switches, focus loss); resume on any interaction.
@@ -59,6 +60,10 @@ const hud = {
 };
 const escape = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// Pixel-art test (docs/ART.md §7.2): ?art=pixel or the checkbox; read when the game starts.
+$('art-pixel').checked = params.get('art') === 'pixel' || store.get('together:art') === 'pixel';
+$('art-pixel').onchange = () => store.set('together:art', $('art-pixel').checked ? 'pixel' : 'painted');
+
 // The lane prototype is a separate mode with its own (lazily loaded) renderer.
 const lanesWanted = () => $('mode-lanes').checked;
 $('mode-lanes').checked = params.get('mode') === 'lanes' || store.get('together:mode') === 'lanes';
@@ -74,7 +79,7 @@ async function launch(session, mode = 'side') {
   if (mode === 'lanes') {
     const { LaneGame } = await import('./lanes/laneGame.js');
     game = new LaneGame(session, hud, audio);
-  } else game = new Game(session, hud, audio);
+  } else { choosePixelMode($('art-pixel').checked); game = new Game(session, hud, audio); }
   game.mode = mode;
   window.__together = game;   // debugging handle
   game.start($('stage'));
@@ -105,7 +110,7 @@ $('join').onclick = async () => {
   } catch { return fail('Could not reach the server.'); }
   launch(new OnlineSession(code, name()), mode);
 };
-$('practice').onclick = () => { audio.start(); fail(''); const mode = lanesWanted() ? 'lanes' : 'side'; launch(new LocalSession(name(), mode), mode); };
+$('practice').onclick = () => { audio.start(); fail(''); const mode = lanesWanted() ? 'lanes' : 'side'; launch(new LocalSession(name(), mode, params.get('seed') ? Number(params.get('seed')) >>> 0 : null), mode); };   // ?seed= repeats a world (for comparisons)
 $('copy').onclick = async () => {
   const link = location.origin + '/?trip=' + $('trip-code').textContent;
   try { await navigator.clipboard.writeText(link); $('copy').textContent = 'Copied'; } catch { prompt('Invite link', link); }

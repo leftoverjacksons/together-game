@@ -202,6 +202,20 @@ The test has two stages. Stage 1 needs no new art at all and answers the main qu
 
 ### 7.2 Stage 1: pixelate what we have, plus hand-written sprites (Claude, automatic, free)
 
+**Status: built 2026-10-12.** Try it: tick *Pixel art (test)* on the menu, or add `?art=pixel` to the address. **P** toggles the palette snap. `?seed=1234` with *Practise alone* repeats a world, for side-by-side comparisons.
+- **Code:**
+  - `client/pixel/mode.js`: the switch and the upscale factor, which is a whole number: round(window height ÷ 260), at least 2.
+  - `client/pixel/sprites.js`: the sprites, written as pixel data and drawing routines. Also the palette.
+  - `client/pixel/textures.js`: turns them into Pixi textures with nearest-neighbour filtering.
+  - `client/pixel/paletteFilter.js`: the palette snap shader (up to 96 colours).
+- **How it works:**
+  - In pixel mode, Pixi renders at 1/scale resolution with antialiasing off, and CSS `image-rendering: pixelated` scales the canvas back up.
+  - The camera is fixed at 16 px/m, dropping to 8 px/m when the travellers are far apart.
+  - The world and the parallax layers are snapped to whole low-res pixels.
+  - Travellers and the collie use frame animation; the tool stays in the hand.
+- **Preview:** `node scripts/pixel-preview.mjs out.png 8` writes an enlarged sheet of every frame, without running the game.
+- **Not yet pixel sprites:** the other animals, trees, camper body and terrain are still the code-drawn art, pixelated.
+
 Stage 1 is all code; no image generation is needed.
 
 1. **Switch styles:** `?art=pixel` (and a menu toggle) turns on pixel mode. The painted look stays the default.

@@ -24,6 +24,9 @@ import { Particles } from './render/particles.js';
 import { Lighting, ambientColor } from './render/lighting.js';
 import { daylight, phaseName } from '../shared/weather.mjs';
 import { PAL } from './render/palette.js';
+import { PIXEL } from './pixel/mode.js';
+import { paletteFilter } from './pixel/paletteFilter.js';
+import { snapPalette, PPM as PIXEL_PPM } from './pixel/sprites.js';
 
 const INTERP_DELAY = 110;          // ms behind the newest snapshot
 const SEND_INTERVAL = 1000 / SNAPSHOT_HZ;
@@ -53,7 +56,11 @@ export class Game {
 
   async start(container) {
     const app = new Application();
-    await app.init({ resizeTo: window, antialias: true, background: PAL.skyLow, autoDensity: true, resolution: Math.min(2, devicePixelRatio || 1) });
+    // Pixel mode renders at 1/scale resolution with no antialiasing; the canvas
+    // is then scaled up by a whole number with nearest-neighbour filtering (CSS).
+    const resolution = PIXEL.on ? 1 / PIXEL.scale : Math.min(2, devicePixelRatio || 1);
+    await app.init({ resizeTo: window, antialias: !PIXEL.on, background: PAL.skyLow, autoDensity: true, resolution, roundPixels: PIXEL.on });
+    if (PIXEL.on) app.canvas.style.imageRendering = 'pixelated';
     container.appendChild(app.canvas);
     this.app = app;
     await loadArt();
@@ -231,6 +238,7 @@ export class Game {
     if (inp.hit('r')) this.session.send({ t: 'weather', wet: (latest.storm || 0) < 0.5 });
     if (inp.hit('n')) this.session.send({ t: 'skipTime' });
     if (inp.hit('m') && this.audio) this.hud.toast(this.audio.toggleMute() ? 'Sound off (M)' : 'Sound on (M)');
+    if (inp.hit('p') && PIXEL.on) this.#togglePaletteSnap();
     const eHit = inp.hit('e');
     const door = this.#camperPoint(c, INTERIOR.doorX, INTERIOR.floorY);
 
@@ -650,6 +658,19 @@ export class Game {
     }
   }
 
+  // Testing: snap every pixel on screen to one fixed palette (P).
+  #togglePaletteSnap() {
+    PIXEL.snap = !PIXEL.snap;
+    const stage = this.app.stage;
+    if (PIXEL.snap) {
+      this.snapFilter = this.snapFilter || paletteFilter(snapPalette(PAL));
+      this.snapFilter.resolution = this.app.renderer.resolution;
+      stage.filters = [this.snapFilter];
+      stage.filterArea = this.app.screen;
+    } else stage.filters = null;
+    this.hud.toast(PIXEL.snap ? 'Palette snap on (P)' : 'Palette snap off (P)');
+  }
+
   #renderAnimals(view) {
     const fx = this.animalFx.clear(), c = view.camper, me = this.me;
     const meX = me.mode === 'in' ? c.x : me.x;
@@ -779,9 +800,17 @@ export class Game {
     const tv = Math.max(15, Math.min(40, Math.max(y1 - y0 + 9, (x1 - x0 + Math.abs(look) * 2 + 14) / aspect)));
     const k = 1 - Math.exp(-dt * 3.2);
     this.cam.x += (tx - this.cam.x) * k; this.cam.y += (ty - this.cam.y) * k; this.cam.viewH += (tv - this.cam.viewH) * k * 0.7;
-    const ppm = h / this.cam.viewH;
+    let ppm = h / this.cam.viewH;
+    if (PIXEL.on) {
+      // Fixed 16 px per metre (8 when the travellers are far apart), and the
+      // camera snapped to whole low-resolution pixels so nothing shimmers.
+      const s = PIXEL.scale;
+      ppm = (tv > h / (PIXEL_PPM * s) * 1.02 ? PIXEL_PPM / 2 : PIXEL_PPM) * s;
+      this.cam.viewH = h / ppm;
+    }
     this.world.scale.set(ppm, -ppm);
-    this.world.position.set(w / 2 - this.cam.x * ppm, h / 2 + this.cam.y * ppm);
+    const snap = v => (PIXEL.on ? Math.round(v / PIXEL.scale) * PIXEL.scale : v);
+    this.world.position.set(snap(w / 2 - this.cam.x * ppm), snap(h / 2 + this.cam.y * ppm));
 
     const halfW = w / 2 / ppm, halfH = h / 2 / ppm;
     const ground = this.terrain.surface[Math.max(0, Math.min(this.terrain.nx - 1, Math.round(this.cam.x / 0.25)))];
@@ -789,6 +818,7 @@ export class Game {
     const storm = view.latest.storm || 0, day = daylight(view.latest.tod ?? 0.3);
     this.bg.update(this.cam.x, this.cam.y, ppm, this.refY, this.time, day);
     this.fg.update(this.cam.x, w, h, ppm, this.time, storm > 0.3 || day < 0.6);
+    if (PIXEL.on) for (const o of [...this.bg.layers.map(L => L.c), this.fg.c, this.fg.trunks]) o.position.set(snap(o.position.x), snap(o.position.y));
     this.#weather(dt, w, h, storm);
     const treeState = new Map((view.latest.trees || []).map(t => [t[0], t]));
     this.forestView.update(this.cam.x - halfW, this.cam.x + halfW, treeState, view.tick, this.time);

@@ -1,4 +1,6 @@
 import { Container, Graphics } from 'pixi.js';
+import { PIXEL } from '../pixel/mode.js';
+import { wheelSheet, pixelSprite } from '../pixel/textures.js';
 import { CAMPER } from '../../shared/sim.mjs';
 import { INTERIOR } from '../../shared/constants.mjs';
 import { PAL } from './palette.js';
@@ -29,6 +31,7 @@ export class CamperView {
 
   #wheel() {
     const c = new Container();
+    if (PIXEL.on) { c.addChild(pixelSprite(wheelSheet().idle[0], 0.5, 0.5)); return c; }
     const art = artSprite('camper.wheel');
     if (art) { c.addChild(art); return c; }
     const g = new Graphics();
